@@ -1,5 +1,5 @@
 // Chartroom Voyages: reads the JSON the submission Action builds in data/ and shows worlds, heatmaps, shared
-// voyages, courses and race boards. Pages: #, #world/<key>, #courses, #course/<id>, #create[/<world key>].
+// routes (voyage files), races and race boards. Pages: #, #world/<key>, #courses, #course/<id>, #create[/<world key>].
 import { ISLAND_CATALOG } from "./vendor/island-catalog.mjs";
 import { drawChart, worldIslands } from "./chart.js";
 import { showRaceBuilder } from "./builder.js";
@@ -71,7 +71,8 @@ darkScheme.addEventListener("change", viewChanged);
 renderViewToggles();
 
 async function data(path) {
-  if (!cache.has(path)) cache.set(path, fetch(path).then((response) => {
+  // GitHub Pages lets browsers keep files for ten minutes; asking each time shows a new submission at once.
+  if (!cache.has(path)) cache.set(path, fetch(path, { cache: "no-cache" }).then((response) => {
     if (!response.ok) throw new Error(`${path}: ${response.status}`);
     return response.json();
   }));
@@ -169,7 +170,7 @@ async function showWorlds(token) {
       link(`#world/${world.key}`, world.name),
       element("span", {
         className: "muted card-meta",
-        textContent: ` ${world.voyages} voyage${world.voyages === 1 ? "" : "s"} · ${world.courses.length} race${world.courses.length === 1 ? "" : "s"}`
+        textContent: ` ${world.voyages} route${world.voyages === 1 ? "" : "s"} · ${world.courses.length} race${world.courses.length === 1 ? "" : "s"}`
       }),
       element("p", { textContent: world.description || worldDetail(world) })
     ))),
@@ -208,7 +209,7 @@ async function showWorld(key, token) {
       heatmap: world.heatmap,
       islands: worldIslands(world),
       bounds: scrambledBounds(world),
-      unit: ["voyage", "voyages"],
+      unit: ["route", "routes"],
       spoilers
     })),
     element("h2", { textContent: "Races" }),
@@ -223,13 +224,13 @@ async function showWorld(key, token) {
           )))
       : element("p", { className: "muted", textContent: "There are no races here yet." }),
     element("p", {}, Object.assign(link(`#create/${encodeURIComponent(key)}`, "Create a race here"), { className: "action-link" })),
-    element("h2", { textContent: "Shared voyages" }),
+    element("h2", { textContent: "Shared routes" }),
     world.voyageList.length
       ? voyageTable(world.voyageList)
-      : element("p", { className: "muted", textContent: "No voyages have been shared here yet." }),
+      : element("p", { className: "muted", textContent: "No routes have been shared here yet." }),
     element("p", {
       className: "muted",
-      textContent: "Download a voyage, then open it in Chartroom with File > Compare voyage."
+      textContent: "Download a route, then open it in Chartroom with File > Compare a route."
     })
   );
 
@@ -268,7 +269,7 @@ function voyageTable(voyages) {
   const table = element("table", {},
     element("thead", {},
       element("tr", {},
-        ...["Voyage", "Shared by", "Distance", "At sea", "Boat", ""].map((text) =>
+        ...["Route", "Shared by", "Distance", "At sea", "Boat", ""].map((text) =>
           element("th", { textContent: text, scope: "col" })
         )
       )
@@ -291,7 +292,7 @@ function voyageTable(voyages) {
     )
   );
 
-  return tableFrame(table, "Shared voyages");
+  return tableFrame(table, "Shared routes");
 }
 
 async function showCreate(worldKey, token) {
@@ -482,7 +483,7 @@ async function showCourse(id, token) {
     runs.length
       ? element("p", {
           className: "muted",
-          textContent: "Download a run and open it in Chartroom with File > Compare voyage to sail against it."
+          textContent: "Download a run and open it in Chartroom with File > Compare a route to sail against it."
         })
       : ""
   );

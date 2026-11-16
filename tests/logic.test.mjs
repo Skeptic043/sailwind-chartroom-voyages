@@ -85,7 +85,7 @@ test("mod, boat and hull rules are checked from the file", async () => {
   assert.match(checkMods({ mode: "require", plugins: ["x.y"] }, plugins), /needs x.y/);
   assert.match(checkMods({ mode: "block", plugins: ["x.y"] }, null), /doesn't list its mods/);
   assert.match(checkRun(validateCourse({ ...base, rules: { boats: ["Cog"] } }), voyage(stops)).reason, /doesn't allow the Brig/);
-  assert.match(checkRun(validateCourse({ ...base, rules: { maxHull: 10 } }), voyage(stops, { hull: 25 })).reason, /over this course's 10%/);
+  assert.match(checkRun(validateCourse({ ...base, rules: { maxHull: 10 } }), voyage(stops, { hull: 25 })).reason, /over this race's 10%/);
   assert.match(checkRun(validateCourse({ ...base, rules: { sortBy: "irl" } }), parseVoyage({ format: "sailwind-voyage", version: 1, points: voyage(stops).points.map(({ utc, ...point }) => point) })).reason, /no real time/);
 });
 
@@ -133,7 +133,7 @@ test("heatmaps count voyages, not positions", () => {
 });
 
 test("a voyage file is read safely and the same trip shared twice is noticed", () => {
-  assert.throws(() => parseVoyage({ format: "x" }), /isn't a voyage file/);
+  assert.throws(() => parseVoyage({ format: "x" }), /isn't a route file/);
   assert.throws(() => parseVoyage({ format: "sailwind-voyage", version: 9 }), /newer Chartroom/);
   const a = parseVoyage({ format: "sailwind-voyage", version: 1, game: "0123456789abcdef", points: [{ t: 1, lat: 30, lon: 1 }, { t: 5, lat: 31, lon: 1 }] });
   const b = parseVoyage({ format: "sailwind-voyage", version: 1, game: "0123456789abcdef", points: [{ t: 4, lat: 30, lon: 1 }, { t: 9, lat: 31, lon: 1 }] });

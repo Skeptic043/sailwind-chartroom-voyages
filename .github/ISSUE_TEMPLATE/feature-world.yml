@@ -1,6 +1,6 @@
-name: Add a world
+name: Publish a world
 description: Give a Scrambled Seas world its own page.
-title: "Add a world"
+title: "Publish a world"
 labels: ["feature-world"]
 body:
   - type: input

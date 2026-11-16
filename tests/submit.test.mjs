@@ -42,7 +42,7 @@ test("issue form fields are read, and attachments are only fetched from GitHub's
   assert.equal(fetched, "https://github.com/user-attachments/files/123/my.voyage.json");
   assert.equal(voyage.points.length, 3);
   await assert.rejects(voyageFromField("https://example.com/files/1/x.json", { fetchFile: async () => { throw new Error("should not fetch"); } }), /valid JSON/);
-  await assert.rejects(voyageFromField(""), /No voyage file/);
+  await assert.rejects(voyageFromField(""), /No file was attached/);
 });
 
 test("a shared voyage joins its world, once", async () => {
@@ -55,7 +55,7 @@ test("a shared voyage joins its world, once", async () => {
     // A stored voyage is still a voyage file, so its download opens in Chartroom.
     const stored = JSON.parse(await readFile(join(folder, "voyages", "vanilla", "7.json"), "utf8"));
     assert.deepEqual([stored.format, stored.version, stored.submitter], ["sailwind-voyage", 1, "sailor"]);
-    await assert.rejects(handle({ number: 8, labels: ["share-voyage"], body: form({ "Voyage file": pasted(file) }), submitter: "sailor" }), /already been shared/);
+    await assert.rejects(handle({ number: 8, labels: ["share-voyage"], body: form({ "Voyage file": pasted(file) }), submitter: "sailor" }), /already been published/);
     await assert.rejects(handle({ number: 9, labels: ["share-voyage"], body: form({ "Voyage file": pasted({ ...file, world: { kind: "unknown" }, game: "fedcba9876543210" }) }), submitter: "sailor" }), /which world/);
   } finally {
     await rm(folder, { recursive: true, force: true });
@@ -99,7 +99,7 @@ test("players create courses and feature worlds", async () => {
     assert.equal(saved.author, "maker");
     await assert.rejects(handle({ number: 21, labels: ["create-course"], body: form({ Course: pasted(course) }), submitter: "maker" }), /already exists/);
     const link = "https://skeptic043.github.io/scrambled-seas-world-generator/#v=1&lo1=-20&lo2=40&la1=20&la2=50&ws=1.4&cx=10&cy=35&as=1.5&is=1.3&isp=1.3&seed=-77";
-    assert.match(await handle({ number: 22, labels: ["feature-world"], body: form({ Name: "Wide sea", Description: "Lots of room", World: link }), submitter: "maker" }), /now featured/);
+    assert.match(await handle({ number: 22, labels: ["feature-world"], body: form({ Name: "Wide sea", Description: "Lots of room", World: link }), submitter: "maker" }), /now published/);
     await buildData();
     const worlds = JSON.parse(await readFile(join(folder, "data", "worlds.json"), "utf8"));
     const wide = worlds.find((world) => world.name === "Wide sea");
@@ -116,6 +116,14 @@ test("bot replies show submitted text as plain text, and courses need a known wo
   try {
     const course = { id: "far-away", name: "Far away", world: "ss-0123456789abcdef", start: { lat: 1, lon: 1, radiusNm: 2 }, checkpoints: [{ lat: 2, lon: 2, radiusNm: 2 }], finish: { lastCheckpoint: true } };
     await assert.rejects(handle({ number: 20, labels: ["create-course"], body: form({ Course: pasted(course) }), submitter: "x" }), /isn't on the site yet/);
+    // A race from Chartroom carries its world's settings, and its world is published with it.
+    const { worldKey } = await import("../lib/world.mjs");
+    const settings = { kind: "scrambled", seed: -77, islandSpread: 6500, minArchipelagoSeparation: 45000, minIslandSeparation: 1950, lonMin: -20, lonMax: 40, latMin: 20, latMax: 50, borderExpander: 1, scrambler: 60 };
+    const withWorld = { ...course, id: "new-world-race", world: worldKey(settings), worldSettings: settings };
+    assert.match(await handle({ number: 21, labels: ["create-course"], body: form({ Race: pasted(withWorld) }), submitter: "x" }), /race is live/);
+    const published = JSON.parse(await readFile(join(folder, "worlds", `${worldKey(settings)}.json`), "utf8"));
+    assert.equal(published.name, "Scrambled Seas seed -77");
+    assert.equal(JSON.parse(await readFile(join(folder, "courses", "new-world-race.json"), "utf8")).worldSettings, undefined);
   } finally {
     await rm(folder, { recursive: true, force: true });
   }

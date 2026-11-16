@@ -298,7 +298,7 @@ export function showRaceBuilder(page, { worlds, loadWorld, courses, repository, 
       islands: state.islands,
       bounds: state.world.world?.kind === "scrambled" ? { minLat: state.world.world.latMin, maxLat: state.world.world.latMax, minLon: state.world.world.lonMin, maxLon: state.world.world.lonMax } : null,
       flags: flags(),
-      unit: ["voyage", "voyages"],
+      unit: ["route", "routes"],
       spoilers: spoilers.checked,
       onPick: place
     });

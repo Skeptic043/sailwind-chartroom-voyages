@@ -1,16 +1,16 @@
-name: Share voyage
-description: Share a voyage on its world's page and heatmap.
-title: "Share voyage"
+name: Publish a route
+description: Publish a route you sailed, and its world if it's new, on the world's page and heatmap.
+title: "Publish a route"
 labels: ["share-voyage"]
 body:
   - type: markdown
     attributes:
       value: |
-        In Sailwind Chartroom, `File` > `Share voyage` saves your voyage and opens this form. Drag the `.voyage.json` file into the box below, then submit the form. Shared voyages are public and show your GitHub username.
+        In Sailwind Chartroom, `File` > `Publish world/route` saves your route and opens this form. Drag the `.voyage.json` file into the box below, then submit the form. Published routes are public and show your GitHub username.
   - type: textarea
     id: voyage
     attributes:
-      label: Voyage file
+      label: Route file
       description: Drag the file here, or paste its contents.
     validations:
       required: true

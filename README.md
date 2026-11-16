@@ -1,16 +1,16 @@
 # Chartroom Voyages
 
-Share your Sailwind voyages and explore the world's heatmap, or race other players on community created courses.
+Publish your Sailwind worlds and routes and explore their heatmaps, or race other players on community created races, all from [Sailwind Chartroom](https://github.com/Skeptic043/sailwind-chartroom/releases/latest) and [Voyage Recorder](https://github.com/Skeptic043/sailwind-voyage-recorder/releases/latest).
 
 [Open Chartroom Voyages](https://skeptic043.github.io/sailwind-chartroom-voyages/)
 
 ## Getting started
 
-You can browse the site without installing anything. To upload voyages and race runs, you need a GitHub account, [Sailwind Chartroom](https://github.com/Skeptic043/sailwind-chartroom/releases/latest), and [Voyage Recorder](https://github.com/Skeptic043/sailwind-voyage-recorder/releases/latest) recording while you sail. Every upload is posted as a GitHub issue.
+You can browse the site without installing anything. To publish routes and race runs, you need a GitHub account, [Sailwind Chartroom](https://github.com/Skeptic043/sailwind-chartroom/releases/latest), and [Voyage Recorder](https://github.com/Skeptic043/sailwind-voyage-recorder/releases/latest) recording while you sail. Every upload is posted as a GitHub issue.
 
 ## How it works
 
-- **Sharing a route or world from Chartroom:** Choose `File` > `Share voyage` in Chartroom, select the part of your track you want to share, then choose `Save and open the form`. Drag the saved file into the form that opens and post it. The voyage will appear on its world's page and heatmap a minute or two later, where anyone can download it and sail against it with `File` > `Compare voyage`.
+- **Publishing a world or route from Chartroom:** Choose `File` > `Publish world/route` in Chartroom, select the part of your track you want to share, then choose `Save and open the form`. Drag the saved file into the form that opens and post it. The route will appear on its world's page and heatmap a minute or two later, with the world published too if it's new, and anyone can download it and sail against it with `File` > `Compare a route`.
 - **Creating a race:** You can create a race by sailing the route in game with Voyage Recorder running, by planning the race and submitting it in [Sailwind Chartroom](https://github.com/Skeptic043/sailwind-chartroom/releases/latest), or by building the route on the [Chartroom Voyages website](https://skeptic043.github.io/sailwind-chartroom-voyages/#create). Races sailed in game can be uploaded through either the app or the website.
 
 ## Fair play

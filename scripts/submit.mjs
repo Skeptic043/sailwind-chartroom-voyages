@@ -36,13 +36,13 @@ export async function voyageFromField(text, { fetchFile = fetchAttachment } = {}
     const block = /```(?:json)?\s*([\s\S]*?)```/.exec(text ?? "");
     raw = block ? block[1] : String(text ?? "").trim();
   }
-  if (!raw) throw new Error("No voyage file was attached. Attach the .voyage.json file Chartroom exported, or paste its contents.");
-  if (raw.length > MAX_FILE_BYTES) throw new Error("The voyage file is larger than 10 MB.");
+  if (!raw) throw new Error("No file was attached. Attach the .voyage.json file Chartroom saved, or paste its contents.");
+  if (raw.length > MAX_FILE_BYTES) throw new Error("The file is larger than 10 MB.");
   let value;
   try {
     value = JSON.parse(raw);
   } catch {
-    throw new Error("The voyage file isn't valid JSON. Attach the file Chartroom exported without changing it.");
+    throw new Error("The file isn't valid JSON. Attach the file Chartroom saved without changing it.");
   }
   return parseVoyage(value);
 }
@@ -52,7 +52,7 @@ async function fetchAttachment(url) {
   const host = new URL(response.url).hostname;
   if (!(host === "github.com" || host.endsWith(".githubusercontent.com"))) throw new Error("The attachment didn't come from GitHub.");
   if (!response.ok) throw new Error(`The attached file couldn't be downloaded (${response.status}).`);
-  if (Number(response.headers.get("content-length")) > MAX_FILE_BYTES) throw new Error("The voyage file is larger than 10 MB.");
+  if (Number(response.headers.get("content-length")) > MAX_FILE_BYTES) throw new Error("The file is larger than 10 MB.");
   // Counted as it arrives, so a file without an honest length still stops at the limit.
   const chunks = [];
   let size = 0;
@@ -60,7 +60,7 @@ async function fetchAttachment(url) {
     size += chunk.length;
     if (size > MAX_FILE_BYTES) {
       await response.body.cancel?.().catch(() => {});
-      throw new Error("The voyage file is larger than 10 MB.");
+      throw new Error("The file is larger than 10 MB.");
     }
     chunks.push(chunk);
   }
@@ -90,9 +90,9 @@ async function writeJson(path, value) {
 
 async function shareVoyage(voyage, { id, submitter, submitted }) {
   const key = worldKey(voyage.world);
-  if (!key) throw new Error("This voyage doesn't say which world it was sailed in.");
+  if (!key) throw new Error("This route doesn't say which world it was sailed in.");
   const existing = await readJsonFiles(`voyages/${key}/`);
-  if (existing.some((other) => overlaps(other, voyage))) throw new Error("This trip, or part of it, has already been shared.");
+  if (existing.some((other) => overlaps(other, voyage))) throw new Error("This route, or part of it, has already been published.");
   await writeJson(`voyages/${key}/${id}.json`, storedVoyage({ ...voyage, world: worldSettings(voyage.world) }, { id, submitter, submitted }));
   return { key };
 }
@@ -102,7 +102,7 @@ async function enterRace(voyage, courseId, alsoShare, context) {
   const course = courses.find((candidate) => candidate.id === courseId.trim());
   if (!course) throw new Error(`There's no course with the id "${courseId.trim()}". Copy it from the course's board.`);
   const key = worldKey(voyage.world);
-  if (key !== course.world) throw new Error(key ? "This voyage was sailed in a different world from the course's." : "This voyage doesn't say which world it was sailed in, so it can't be entered.");
+  if (key !== course.world) throw new Error(key ? "This run was sailed in a different world from the race's." : "This run doesn't say which world it was sailed in, so it can't be entered.");
   const runs = await readJsonFiles(`runs/${course.id}/`);
   if (runs.some((run) => overlaps(run.voyage, voyage))) throw new Error("This run has already been entered.");
   const result = checkRun(validateCourse(course), voyage);
@@ -119,7 +119,7 @@ async function enterRace(voyage, courseId, alsoShare, context) {
   return result;
 }
 
-async function createCourse(text, { submitter }) {
+async function createCourse(text, { submitter, submitted }) {
   const block = /```(?:json)?\s*([\s\S]*?)```/.exec(text ?? "");
   let value;
   try {
@@ -128,12 +128,17 @@ async function createCourse(text, { submitter }) {
     throw new Error("The race isn't valid JSON. The race builder on the site fills it in for you.");
   }
   const course = validateCourse({ ...value, author: submitter });
-  // A Scrambled Seas course needs a world the site already knows, so its page can show and rebuild it.
+  // A Scrambled Seas race needs a world the site knows, so its page can show and rebuild it. A race from
+  // Chartroom carries its world's settings, and publishes the world with it when the site doesn't have it yet.
   if (course.world !== "vanilla" && !(await readJsonFiles("worlds/")).some((world) => world.key === course.world) && !(await readJsonFiles(`voyages/${course.world}/`)).length) {
-    throw new Error("This course's world isn't on the site yet. Share a voyage from it or feature the world first.");
+    const settings = value.worldSettings ? worldSettings(value.worldSettings) : null;
+    if (!settings || worldKey(settings) !== course.world) {
+      throw new Error("This race's world isn't on the site yet. Publish the race from Sailwind Chartroom, or publish a route or the world first.");
+    }
+    await writeJson(`worlds/${course.world}.json`, { key: course.world, name: `Scrambled Seas seed ${settings.seed}`, description: "", author: submitter, submitted, world: settings });
   }
   const existing = await readJsonFiles("courses/");
-  if (existing.some((other) => other.id === course.id)) throw new Error(`A course with the id "${course.id}" already exists. Choose another id, such as ${course.id}-2.`);
+  if (existing.some((other) => other.id === course.id)) throw new Error(`A race with the id "${course.id}" already exists. Choose another id, such as ${course.id}-2.`);
   await writeJson(`courses/${course.id}.json`, course);
   return course;
 }
@@ -143,9 +148,9 @@ async function featureWorld(fields, { submitter, submitted }) {
   const world = source.trim().startsWith("<") || source.includes("<ScrambledSeasSaveContainer") ? worldFromXml(source) : worldFromGeneratorLink(source.trim());
   const key = worldKey(world);
   const existing = await readJsonFiles("worlds/");
-  if (existing.some((other) => other.key === key)) throw new Error("This world is already featured.");
+  if (existing.some((other) => other.key === key)) throw new Error("This world has already been published.");
   const name = (fields["Name"] ?? "").trim().slice(0, 80);
-  if (!name) throw new Error("A featured world needs a name.");
+  if (!name) throw new Error("A published world needs a name.");
   await writeJson(`worlds/${key}.json`, { key, name, description: (fields["Description"] ?? "").trim().slice(0, 1000), author: submitter, submitted, world: worldSettings(world) });
   return { key, name };
 }
@@ -156,13 +161,13 @@ export async function handle({ number, labels, body, submitter, site = "" }) {
   const fields = formFields(body);
   const context = { submitter, submitted: new Date().toISOString(), id: `${number}` };
   if (labels.includes("share-voyage")) {
-    const { key } = await shareVoyage(await voyageFromField(fields["Voyage file"]), context);
-    return `Thanks! Your voyage is now part of [its world's page](${site}#world/${key}).`;
+    const { key } = await shareVoyage(await voyageFromField(fields["Route file"] ?? fields["Voyage file"]), context);
+    return `Thanks! Your route is now on [its world's page](${site}#world/${key}).`;
   }
   if (labels.includes("enter-race")) {
     const courseId = fields["Course id"] ?? "";
     const alsoShare = /\[x\]/i.test(fields["Heatmap"] ?? "");
-    const result = await enterRace(await voyageFromField(fields["Voyage file"]), courseId, alsoShare, context);
+    const result = await enterRace(await voyageFromField(fields["Run file"] ?? fields["Voyage file"]), courseId, alsoShare, context);
     return `Accepted: ${hours(result.gameHours)} of game time from ${plain(result.startedFrom)}. See [the board](${site}#course/${encodeURIComponent(courseId.trim())}).`;
   }
   if (labels.includes("create-course")) {
@@ -171,7 +176,7 @@ export async function handle({ number, labels, body, submitter, site = "" }) {
   }
   if (labels.includes("feature-world")) {
     const { key, name } = await featureWorld(fields, context);
-    return `${plain(name)} is now featured: [its page](${site}#world/${key}).`;
+    return `${plain(name)} is now published: [its page](${site}#world/${key}).`;
   }
   throw new Error("This issue isn't one of the submission forms.");
 }
