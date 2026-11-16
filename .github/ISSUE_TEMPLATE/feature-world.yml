@@ -1,0 +1,22 @@
+name: Add a world
+description: Give a Scrambled Seas world its own page.
+title: "Add a world"
+labels: ["feature-world"]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Name
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+  - type: textarea
+    id: world
+    attributes:
+      label: World
+      description: A World Generator share link or the world's Scrambled Seas XML.
+    validations:
+      required: true

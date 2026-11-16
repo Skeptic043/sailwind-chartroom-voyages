@@ -1,0 +1,29 @@
+name: Enter race
+description: Add a voyage to a course's board.
+title: "Enter race"
+labels: ["enter-race"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        In Sailwind Chartroom, `File` > `Enter race` checks your run, saves it and opens this form with the course filled in. Drag the `.voyage.json` file into the box below, then submit the form. Entries are public and show your GitHub username.
+  - type: input
+    id: course
+    attributes:
+      label: Course id
+      description: The id shown on the course's board, such as shipyard-tour.
+    validations:
+      required: true
+  - type: textarea
+    id: voyage
+    attributes:
+      label: Voyage file
+      description: Drag the file here, or paste its contents.
+    validations:
+      required: true
+  - type: checkboxes
+    id: heatmap
+    attributes:
+      label: Heatmap
+      options:
+        - label: Also count this voyage towards the world's heatmap

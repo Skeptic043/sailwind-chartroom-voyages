@@ -1,0 +1,12 @@
+{
+  "name": "chartroom-voyages",
+  "private": true,
+  "type": "module",
+  "description": "Shared Sailwind voyages, heatmaps and casual race boards for Sailwind Chartroom.",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "build": "node scripts/build-data.mjs",
+    "preview": "node scripts/preview.mjs",
+    "preview:demo": "node scripts/preview.mjs --demo"
+  }
+}

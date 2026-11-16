@@ -1,0 +1,53 @@
+{
+  "id": "emerald-tour",
+  "version": 1,
+  "name": "Emerald Archipelago tour",
+  "author": "Chartroom Voyages",
+  "description": "Leave Dragon Cliffs, visit every charted island in Emerald Archipelago in any order, then return to Dragon Cliffs.",
+  "world": "vanilla",
+  "start": {
+    "island": "emerald/dragon_cliffs"
+  },
+  "checkpoints": [
+    {
+      "island": "emerald/crab_beach"
+    },
+    {
+      "island": "emerald/dead_cove"
+    },
+    {
+      "island": "emerald/new_port"
+    },
+    {
+      "island": "emerald/pondering_peak"
+    },
+    {
+      "island": "emerald/sage_hills"
+    },
+    {
+      "island": "emerald/sanctuary"
+    },
+    {
+      "island": "emerald/serpent_isle"
+    },
+    {
+      "island": "emerald/turtle_island"
+    }
+  ],
+  "order": "any",
+  "finish": {
+    "island": "emerald/dragon_cliffs"
+  },
+  "spoiler": false,
+  "rules": {
+    "sortBy": "game",
+    "mods": {
+      "mode": "any",
+      "plugins": []
+    },
+    "boats": null,
+    "oneBoat": false,
+    "maxHull": null,
+    "honour": ""
+  }
+}
