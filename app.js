@@ -230,7 +230,7 @@ async function showWorld(key, token) {
       : element("p", { className: "muted", textContent: "No routes have been shared here yet." }),
     element("p", {
       className: "muted",
-      textContent: "Download a route, then open it in Chartroom with File > Compare a route."
+      textContent: "Download a route, then open it in Chartroom with Voyage > Compare a route."
     })
   );
 
@@ -483,7 +483,7 @@ async function showCourse(id, token) {
     runs.length
       ? element("p", {
           className: "muted",
-          textContent: "Download a run and open it in Chartroom with File > Compare a route to sail against it."
+          textContent: "Download a run and open it in Chartroom with Voyage > Compare a route to sail against it."
         })
       : ""
   );
