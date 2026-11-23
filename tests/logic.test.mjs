@@ -83,10 +83,26 @@ test("mod, boat and hull rules are checked from the file", async () => {
   assert.match(checkRun(validateCourse({ ...base, rules: { mods: { mode: "only", plugins: [] } } }), voyage(stops, { plugins })).reason, /no other mods/);
   assert.equal(checkRun(validateCourse({ ...base, rules: { mods: { mode: "only", plugins: ["some.fast.mod"] } } }), voyage(stops, { plugins })).ok, true);
   assert.match(checkMods({ mode: "require", plugins: ["x.y"] }, plugins), /needs x.y/);
-  assert.match(checkMods({ mode: "block", plugins: ["x.y"] }, null), /doesn't list its mods/);
+  // A recording from before Voyage Recorder 0.2.2 lists no mods: the run is accepted with a note.
+  assert.equal(checkMods({ mode: "block", plugins: ["x.y"] }, null), "");
+  // A recording from before Voyage Recorder 0.2.2 has no world, real time or mod list.
+  const untimedPoints = voyage(stops).points.map(({ utc, ...point }) => point);
+  const older = { ...voyage(stops), world: { kind: "unknown" }, plugins: null, points: untimedPoints };
+  assert.equal(checkRun(validateCourse({ ...base, rules: { mods: { mode: "only", plugins: [] } } }), older).ok, true);
+  assert.deepEqual(checkRun(validateCourse({ ...base, rules: { mods: { mode: "only", plugins: [] } } }), older).notes, ["mods-not-recorded"]);
+  // Real time without a mod list means the list was removed.
+  assert.match(checkRun(validateCourse(base), { ...voyage(stops), plugins: null }).reason, /no mod list/);
+  // An unreadable Scrambled Seas save leaves out only the world; a run picked from before an upgrade has no real time.
+  assert.equal(checkRun(validateCourse(base), { ...voyage(stops), world: { kind: "unknown" } }).ok, true);
+  assert.equal(checkRun(validateCourse(base), { ...voyage(stops), points: untimedPoints }).ok, true);
   assert.match(checkRun(validateCourse({ ...base, rules: { boats: ["Cog"] } }), voyage(stops)).reason, /doesn't allow the Brig/);
   assert.match(checkRun(validateCourse({ ...base, rules: { maxHull: 10 } }), voyage(stops, { hull: 25 })).reason, /over this race's 10%/);
-  assert.match(checkRun(validateCourse({ ...base, rules: { sortBy: "irl" } }), parseVoyage({ format: "sailwind-voyage", version: 1, points: voyage(stops).points.map(({ utc, ...point }) => point) })).reason, /no real time/);
+  // A real-time board takes a run without real time too, timed by game time and noted.
+  const untimed = checkRun(validateCourse({ ...base, rules: { sortBy: "irl" } }), parseVoyage({ format: "sailwind-voyage", version: 1, points: voyage(stops).points.map(({ utc, ...point }) => point) }));
+  assert.equal(untimed.ok, true);
+  assert.equal(untimed.irlSeconds, null);
+  assert.ok(untimed.gameHours > 0);
+  assert.deepEqual(untimed.notes, ["no-real-time"]);
 });
 
 test("courses are checked before they're published", () => {

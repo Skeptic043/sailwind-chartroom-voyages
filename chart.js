@@ -262,7 +262,7 @@ export function drawChart(frame, options) {
     }
 
     // Race flags: green start, gold checkpoints, red finish.
-    for (const flag of flags) drawFlag(context, x(flag.lon), y(flag.lat), colour(`--flag-${flag.kind}`), colour("--chart-coast"));
+    for (const flag of flags) drawFlag(context, x(flag.lon), y(flag.lat), flag.kind, colour(`--flag-${flag.kind}`), colour("--chart-coast"), colour("--chart-sea"));
     context.restore();
 
     context.strokeStyle = colour("--chart-rule");
@@ -458,7 +458,9 @@ function heatRamp(style) {
   });
 }
 
-function drawFlag(context, x, y, fill, ink) {
+// The same shapes as Chartroom's race flags, so they differ without colour too: a plain flag starts, a
+// pennant marks a checkpoint and a chequered flag finishes.
+function drawFlag(context, x, y, kind, fill, ink, paper) {
   context.save();
   context.strokeStyle = ink;
   context.lineWidth = 1.4;
@@ -468,11 +470,19 @@ function drawFlag(context, x, y, fill, ink) {
   context.stroke();
   context.fillStyle = fill;
   context.beginPath();
-  context.moveTo(x, y - 15);
-  context.lineTo(x + 10, y - 11.5);
-  context.lineTo(x, y - 8);
-  context.closePath();
+  if (kind === "checkpoint") {
+    context.moveTo(x, y - 15);
+    context.lineTo(x + 10, y - 11.5);
+    context.lineTo(x, y - 8);
+    context.closePath();
+  } else context.rect(x, y - 15, 10, 7);
   context.fill();
+  if (kind === "finish") {
+    context.fillStyle = paper;
+    for (let column = 0; column < 3; column += 1) {
+      for (let row = 0; row < 2; row += 1) if ((column + row) % 2) context.fillRect(x + column * 10 / 3, y - 15 + row * 3.5, 10 / 3, 3.5);
+    }
+  }
   context.lineWidth = 0.8;
   context.stroke();
   context.fillStyle = ink;

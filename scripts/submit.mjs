@@ -101,14 +101,21 @@ async function enterRace(voyage, courseId, alsoShare, context) {
   const courses = await readJsonFiles("courses/");
   const course = courses.find((candidate) => candidate.id === courseId.trim());
   if (!course) throw new Error(`There's no course with the id "${courseId.trim()}". Copy it from the course's board.`);
+  // A recording from before Voyage Recorder 0.2.2, or one whose Scrambled Seas save couldn't be read, doesn't name
+  // its world; it's taken as the race's, with a note.
   const key = worldKey(voyage.world);
-  if (key !== course.world) throw new Error(key ? "This run was sailed in a different world from the race's." : "This run doesn't say which world it was sailed in, so it can't be entered.");
+  if (!key && voyage.world.kind !== "unknown") throw new Error("This run doesn't say which world it was sailed in, so it can't be entered.");
+  if (key && key !== course.world) throw new Error("This run was sailed in a different world from the race's.");
   const runs = await readJsonFiles(`runs/${course.id}/`);
-  if (runs.some((run) => overlaps(run.voyage, voyage))) throw new Error("This run has already been entered.");
-  const result = checkRun(validateCourse(course), voyage);
-  if (!result.ok) throw new Error(result.reason);
-  await writeJson(`runs/${course.id}/${context.id}.json`, { id: context.id, submitter: context.submitter, submitted: context.submitted, course: course.id, courseVersion: course.version, ...result, voyage: storedVoyage({ ...voyage, world: worldSettings(voyage.world) }, context) });
+  if (runs.some((run) => overlaps(run.voyage, voyage) || sameUnnamedRun(run.voyage, voyage))) throw new Error("This run has already been entered.");
+  const checked = checkRun(validateCourse(course), voyage);
+  if (!checked.ok) throw new Error(checked.reason);
+  const notes = [...(key ? [] : ["world-not-recorded"]), ...(checked.notes ?? [])];
+  const result = { ...checked, ...(notes.length && { notes }) };
+  await writeJson(`runs/${course.id}/${context.id}.json`, { id: context.id, submitter: context.submitter, submitted: context.submitted, course: course.id, courseVersion: course.version, ...result, voyage: storedVoyage({ ...voyage, world: key ? worldSettings(voyage.world) : { kind: "unknown" } }, context) });
   // A race entry counts toward the heatmap only when the player asked; one already shared isn't added twice.
+  // A run without a recorded world has no world's heatmap to join.
+  if (alsoShare && !key) return { ...result, notShared: true };
   if (alsoShare) {
     try {
       await shareVoyage(voyage, { ...context, id: `${context.id}-shared` });
@@ -117,6 +124,14 @@ async function enterRace(voyage, courseId, alsoShare, context) {
     }
   }
   return result;
+}
+
+// Recordings from before Voyage Recorder 0.1.9 have no game id, so overlaps can't tell them apart; the same
+// file sent again has the same first and last positions.
+function sameUnnamedRun(a, b) {
+  if (a.game || b.game) return false;
+  const ends = (voyage) => [voyage.points[0], voyage.points.at(-1)].flatMap((point) => [point.t, point.lat, point.lon]).join();
+  return ends(a) === ends(b);
 }
 
 async function createCourse(text, { submitter, submitted }) {
@@ -168,7 +183,8 @@ export async function handle({ number, labels, body, submitter, site = "" }) {
     const courseId = fields["Course id"] ?? "";
     const alsoShare = /\[x\]/i.test(fields["Heatmap"] ?? "");
     const result = await enterRace(await voyageFromField(fields["Run file"] ?? fields["Voyage file"]), courseId, alsoShare, context);
-    return `Accepted: ${hours(result.gameHours)} of game time from ${plain(result.startedFrom)}. See [the board](${site}#course/${encodeURIComponent(courseId.trim())}).`;
+    const unshared = result.notShared ? " It wasn't added to the heatmap, because the recording doesn't say which world it was sailed in." : "";
+    return `Accepted: ${hours(result.gameHours)} of game time from ${plain(result.startedFrom)}. See [the board](${site}#course/${encodeURIComponent(courseId.trim())}).${unshared}`;
   }
   if (labels.includes("create-course")) {
     const course = await createCourse(fields["Race"] ?? fields["Course"], context);

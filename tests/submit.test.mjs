@@ -128,3 +128,31 @@ test("bot replies show submitted text as plain text, and courses need a known wo
     await rm(folder, { recursive: true, force: true });
   }
 });
+
+test("runs from older recordings are entered with notes and listed after the real-time ranking", async () => {
+  const folder = await scratch();
+  try {
+    const ports = ["firefish/kicia_bay", "alankh/gold_rock_city", "aestrin/fort_aestrin", "emerald/dragon_cliffs"].map(islandById);
+    // Voyage Recorder before 0.2.2: no world, no real time and no mod list.
+    const { plugins, world, ...old } = voyageFile(ports, { game: "" });
+    old.points = old.points.map(({ utc, ...point }) => point);
+    const timed = voyageFile(ports, { game: "4444444444444444", start: 400 });
+    const course = { id: "timed-tour", name: "Timed tour", world: "vanilla", start: { any: true }, checkpoints: ports.map((port) => ({ island: port.id })), finish: { lastCheckpoint: true }, rules: { sortBy: "irl", mods: { mode: "only", plugins: [] } } };
+    await handle({ number: 20, labels: ["create-course"], body: form({ Course: pasted(course) }), submitter: "host" });
+    const entry = (number, file) => handle({ number, labels: ["enter-race"], body: form({ "Course id": "timed-tour", "Voyage file": pasted(file) }), submitter: `p${number}` });
+    assert.match(await handle({ number: 21, labels: ["enter-race"], body: form({ "Course id": "timed-tour", "Voyage file": pasted(old), Heatmap: "- [x] Also count toward the world's heatmap" }), submitter: "p21" }), /Accepted.*wasn't added to the heatmap/);
+    // Without a game id, the same file sent again is still caught.
+    await assert.rejects(entry(24, old), /already been entered/);
+    assert.match(await entry(22, timed), /Accepted/);
+    await assert.rejects(entry(23, voyageFile(ports, { game: "5555555555555555", world: { kind: "scrambled", seed: 1, islandSpread: 10000, minArchipelagoSeparation: 30000, minIslandSeparation: 2000, lonMin: -12, lonMax: 32, latMin: 26, latMax: 46, borderExpander: 0, scrambler: 60 } })), /different world/);
+    const run = JSON.parse(await readFile(join(folder, "runs", "timed-tour", "21.json"), "utf8"));
+    assert.deepEqual(run.notes, ["world-not-recorded", "mods-not-recorded", "no-real-time"]);
+    assert.equal(run.voyage.world.kind, "unknown");
+    await buildData();
+    const board = JSON.parse(await readFile(join(folder, "data", "boards", "timed-tour.json"), "utf8"));
+    assert.deepEqual(board.runs.map((entry) => [entry.submitter, entry.rank]), [["p22", 1], ["p21", null]]);
+    assert.deepEqual(board.runs[1].notes, ["world-not-recorded", "mods-not-recorded", "no-real-time"]);
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
+});

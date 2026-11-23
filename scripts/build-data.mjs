@@ -92,8 +92,11 @@ export async function buildData() {
   for (const course of courses) {
     const runs = await jsonFiles(`runs/${course.id}/`);
     const sortBy = course.rules?.sortBy === "irl" ? "irlSeconds" : "gameHours";
-    const entries = runs.filter((run) => Number.isFinite(run[sortBy])).sort((a, b) => a[sortBy] - b[sortBy]).map((run, index) => ({
-      rank: index + 1,
+    // Runs without the board's time (a real-time board's runs from older recordings) follow the ranked ones.
+    const ranked = runs.filter((run) => Number.isFinite(run[sortBy])).sort((a, b) => a[sortBy] - b[sortBy]);
+    const unranked = runs.filter((run) => !Number.isFinite(run[sortBy]) && Number.isFinite(run.gameHours)).sort((a, b) => a.gameHours - b.gameHours);
+    const entries = [...ranked, ...unranked].map((run, index) => ({
+      rank: index < ranked.length ? index + 1 : null,
       id: run.id,
       submitter: run.submitter,
       submitted: run.submitted,
@@ -102,6 +105,7 @@ export async function buildData() {
       boat: run.boat,
       windKnots: run.windKnots,
       startedFrom: run.startedFrom,
+      ...(Array.isArray(run.notes) && run.notes.length && { notes: run.notes }),
       splits: run.splits.map((split) => ({ name: split.name, hours: Math.round((split.t - run.start) * 100) / 100 })),
       file: `runs/${course.id}/${run.id}.json`
     }));

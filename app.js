@@ -99,6 +99,13 @@ function duration(hours) {
   return days ? `${days}d ${rest}` : rest;
 }
 
+// What an older recording didn't have, shown under the player's name on a race board.
+const RUN_NOTES = Object.freeze({
+  "world-not-recorded": "World not recorded",
+  "mods-not-recorded": "Mods not recorded",
+  "no-real-time": "No real time recorded"
+});
+
 function realTime(seconds) {
   if (!Number.isFinite(seconds)) return "—";
   const total = Math.round(seconds);
@@ -426,8 +433,11 @@ async function showCourse(id, token) {
           ),
           element("tbody", {},
             ...runs.map((run) => element("tr", {},
-              element("th", { textContent: String(run.rank), scope: "row" }),
-              element("td", { textContent: run.submitter }),
+              element("th", { textContent: run.rank ? String(run.rank) : "—", scope: "row" }),
+              element("td", {},
+                run.submitter,
+                ...(run.notes?.length ? [element("span", { className: "run-notes", textContent: run.notes.map((note) => RUN_NOTES[note] ?? note).join(" · ") })] : [])
+              ),
               element("td", {
                 textContent: duration(run.gameHours),
                 title: run.splits.map((split) => `${split.name}: ${duration(split.hours)}`).join("\n")
