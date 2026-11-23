@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        In Sailwind Chartroom, `File` > `Publish world/route` saves your route and opens this form. Drag the `.voyage.json` file into the box below, then submit the form. Published routes are public and show your GitHub username.
+        In Sailwind Chartroom, `Voyage` > `Publish world/route` saves your route and opens this form. Drag the `.voyage.json` file into the box below, then submit the form. Published routes are public and show your GitHub username. If you leave the route unnamed in Chartroom, this issue's title is used instead.
   - type: textarea
     id: voyage
     attributes:
@@ -14,3 +14,18 @@ body:
       description: Drag the file here, or paste its contents.
     validations:
       required: true
+  - type: dropdown
+    id: world
+    attributes:
+      label: World (for older recordings)
+      description: Leave on the default for recordings made with Voyage Recorder 0.2.2 or newer. Choose a world here only if your route file does not include its world.
+      default: 0
+      options:
+        - From the route file (default)
+        - Vanilla Sailwind
+        - Scrambled Seas (paste link or XML below)
+  - type: textarea
+    id: scrambled_world
+    attributes:
+      label: Scrambled Seas world (optional)
+      description: Only needed if you chose Scrambled Seas above. Paste a World Generator share link or the world's Scrambled Seas XML.

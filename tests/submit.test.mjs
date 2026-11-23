@@ -111,7 +111,7 @@ test("players create courses and feature worlds", async () => {
 
 test("bot replies show submitted text as plain text, and courses need a known world", async () => {
   const { plain } = await import("../scripts/submit.mjs");
-  assert.equal(plain("Legit](https://evil.example) [click @user\nnow"), "Legit\\]\\(https://evil.example\\) \\[click @​user now");
+  assert.equal(plain("Legit](https://evil.example) [click @user\nnow"), "Legit\\]\\(https:\u200b//evil.example\\) \\[click @\u200buser now");
   const folder = await scratch();
   try {
     const course = { id: "far-away", name: "Far away", world: "ss-0123456789abcdef", start: { lat: 1, lon: 1, radiusNm: 2 }, checkpoints: [{ lat: 2, lon: 2, radiusNm: 2 }], finish: { lastCheckpoint: true } };
@@ -152,6 +152,187 @@ test("runs from older recordings are entered with notes and listed after the rea
     const board = JSON.parse(await readFile(join(folder, "data", "boards", "timed-tour.json"), "utf8"));
     assert.deepEqual(board.runs.map((entry) => [entry.submitter, entry.rank]), [["p22", 1], ["p21", null]]);
     assert.deepEqual(board.runs[1].notes, ["world-not-recorded", "mods-not-recorded", "no-real-time"]);
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
+test("course matching accepts display names and board URLs, and suggests close ids", async () => {
+  const { resolveCourse } = await import("../scripts/submit.mjs");
+  const folder = await scratch();
+  try {
+    const ports = ["firefish/kicia_bay", "alankh/gold_rock_city", "aestrin/fort_aestrin", "emerald/dragon_cliffs"].map(islandById);
+    const runA = voyageFile(ports, { game: "aaaaaaaaaaaaaaaa" });
+    const runB = voyageFile(ports, { game: "bbbbbbbbbbbbbbbb" });
+    const replyA = await handle({
+      number: 30,
+      labels: ["enter-race"],
+      body: form({ "Course id": "Shipyard Tour", "Run file": pasted(runA) }),
+      submitter: "captain"
+    });
+    assert.match(replyA, /Accepted:.*#course\/shipyard-tour\)/);
+    // Re-submitting an accepted race entry issue number is blocked with alreadyAccepted.
+    await assert.rejects(
+      handle({ number: 30, labels: ["enter-race"], body: form({ "Course id": "shipyard-tour", "Run file": pasted(runB) }), submitter: "captain" }),
+      (error) => error.alreadyAccepted === true && /already been accepted/.test(error.message)
+    );
+    const replyB = await handle({
+      number: 31,
+      labels: ["enter-race"],
+      body: form({ "Course id": "https://skeptic043.github.io/sailwind-chartroom-voyages/#course/shipyard-tour", "Run file": pasted(runB) }),
+      submitter: "mate"
+    });
+    assert.match(replyB, /Accepted:.*#course\/shipyard-tour\)/);
+    await assert.rejects(
+      handle({ number: 32, labels: ["enter-race"], body: form({ "Course id": "shipyard", "Run file": pasted(runB) }), submitter: "mate" }),
+      /Did you mean "shipyard-tour"/
+    );
+    // Display names whose slug differs from id, malformed URL segments, 1-char input, and ambiguous names.
+    const list = [
+      { id: "a", name: "Short" },
+      { id: "alankh-tour", name: "Al'Ankh tour" },
+      { id: "emerald-tour", name: "Emerald Archipelago tour" },
+      { id: "dup-1", name: "Same Name" },
+      { id: "dup-2", name: "Same Name" }
+    ];
+    assert.equal(resolveCourse(list, "Al’Ankh tour").course?.id, "alankh-tour");
+    assert.equal(resolveCourse(list, "Al Ankh tour").course?.id, "alankh-tour");
+    assert.equal(resolveCourse(list, "Emerald Archipelago tour").course?.id, "emerald-tour");
+    assert.equal(resolveCourse(list, "https://example.test/#course/a_b").course, null);
+    assert.equal(resolveCourse(list, "x").suggestion, null);
+    assert.equal(resolveCourse(list, "Same Name").course, null);
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
+test("older routes can declare their world on the form or in the file and count toward the heatmap", async () => {
+  const folder = await scratch();
+  try {
+    const ports = [islandById("alankh/gold_rock_city"), islandById("alankh/neverdin")];
+    const legacy = voyageFile(ports, { game: "", world: { kind: "unknown" } });
+    legacy.name = "";
+    // First attempt without declaring a world fails, then editing the same issue (#40) to declare Vanilla succeeds.
+    await assert.rejects(
+      handle({ number: 40, labels: ["share-voyage"], title: "Vanilla Capitals with trade winds", body: form({ "Route file": pasted(legacy) }), submitter: "beaver" }),
+      /World \(for older recordings\)/
+    );
+    const accepted = await handle({
+      number: 40,
+      labels: ["share-voyage"],
+      title: "Vanilla Capitals with trade winds",
+      body: form({ "Route file": pasted(legacy), "World (for older recordings)": "Vanilla Sailwind" }),
+      submitter: "beaver"
+    });
+    assert.match(accepted, /#world\/vanilla.*player-declared world/);
+    // Re-running the same accepted issue number or an accepted-labeled issue is rejected with alreadyAccepted.
+    await assert.rejects(
+      handle({ number: 40, labels: ["share-voyage"], title: "Edited again", body: form({ "Route file": pasted(legacy), "World (for older recordings)": "Vanilla Sailwind" }), submitter: "beaver" }),
+      (error) => error.alreadyAccepted === true && /already been accepted/.test(error.message)
+    );
+    await assert.rejects(
+      handle({ number: 41, labels: ["share-voyage", "accepted"], body: form({ "Route file": pasted(legacy), "World (for older recordings)": "Vanilla Sailwind" }), submitter: "beaver" }),
+      (error) => error.alreadyAccepted === true && /already been accepted/.test(error.message)
+    );
+    // Submitting the same unnamed legacy file under a new issue number is still caught as a duplicate.
+    await assert.rejects(
+      handle({ number: 42, labels: ["share-voyage"], body: form({ "Route file": pasted(legacy), "World (for older recordings)": "Vanilla Sailwind" }), submitter: "beaver" }),
+      /already been published/
+    );
+    // Declaring a Scrambled Seas world via World Generator link works; unnamed route with default title stays unnamed.
+    const link = "https://skeptic043.github.io/scrambled-seas-world-generator/#v=1&lo1=-20&lo2=40&la1=20&la2=50&ws=1.4&cx=10&cy=35&as=1.5&is=1.3&isp=1.3&seed=-77";
+    const legacyScrambled = { ...voyageFile(ports, { game: "cccccccccccccccc", world: { kind: "unknown" } }), name: "" };
+    const scrambledReply = await handle({
+      number: 43,
+      labels: ["share-voyage"],
+      title: "Publish a route",
+      body: form({
+        "Route file": pasted(legacyScrambled),
+        "World (for older recordings)": "Scrambled Seas (paste link or XML below)",
+        "Scrambled Seas world (optional)": link
+      }),
+      submitter: "explorer"
+    });
+    assert.match(scrambledReply, /#world\/ss-[0-9a-f]{16}/);
+    // Pasting Scrambled Seas XML even with dropdown left on default is accepted.
+    const xml = `<ScrambledSeasSaveContainer><version>60</version><worldScramblerSeed>-88</worldScramblerSeed><islandSpread>6500</islandSpread><minArchipelagoSeparation>45000</minArchipelagoSeparation><minIslandSeparation>1950</minIslandSeparation><worldLonMin>-20</worldLonMin><worldLonMax>40</worldLonMax><worldLatMin>20</worldLatMin><worldLatMax>50</worldLatMax><borderExpander>1</borderExpander></ScrambledSeasSaveContainer>`;
+    const xmlRoute = voyageFile(ports, { game: "c1c1c1c1c1c1c1c1", world: { kind: "unknown" } });
+    assert.match(
+      await handle({
+        number: 48,
+        labels: ["share-voyage"],
+        title: "Custom issue title ignored when file has name",
+        body: form({ "Route file": pasted(xmlRoute), "World (for older recordings)": "From the route file (default)", "Scrambled Seas world (optional)": xml }),
+        submitter: "xmlSailor"
+      }),
+      /#world\/ss-[0-9a-f]{16}/
+    );
+    // Form validation errors: choosing both Vanilla and Scrambled Seas, or Scrambled Seas with empty box.
+    const extraLegacy = voyageFile(ports, { game: "c2c2c2c2c2c2c2c2", world: { kind: "unknown" } });
+    await assert.rejects(
+      handle({ number: 49, labels: ["share-voyage"], body: form({ "Route file": pasted(extraLegacy), "World (for older recordings)": "Vanilla Sailwind", "Scrambled Seas world (optional)": link }), submitter: "x" }),
+      /not both/
+    );
+    await assert.rejects(
+      handle({ number: 50, labels: ["share-voyage"], body: form({ "Route file": pasted(extraLegacy), "World (for older recordings)": "Scrambled Seas (paste link or XML below)" }), submitter: "x" }),
+      /Paste a World Generator share link/
+    );
+    // A file that already recorded Vanilla cannot be overridden with a different world, and selecting Vanilla on it does not mark it declared.
+    const recordedVanilla = voyageFile(ports, { game: "dddddddddddddddd", world: { kind: "vanilla" }, start: 300 });
+    await assert.rejects(
+      handle({
+        number: 44,
+        labels: ["share-voyage"],
+        body: form({
+          "Route file": pasted(recordedVanilla),
+          "World (for older recordings)": "Scrambled Seas (paste link or XML below)",
+          "Scrambled Seas world (optional)": link
+        }),
+        submitter: "explorer"
+      }),
+      /already says it was sailed in a different world/
+    );
+    const sameWorldReply = await handle({
+      number: 46,
+      labels: ["share-voyage"],
+      body: form({ "Route file": pasted(recordedVanilla), "World (for older recordings)": "Vanilla Sailwind" }),
+      submitter: "recordedUser"
+    });
+    assert.doesNotMatch(sameWorldReply, /player-declared/);
+    // A route whose JSON itself carries worldDeclared: true (from Chartroom) is accepted and noted, and works in races with heatmap opt-in without leaking "Enter race" as its route name.
+    const racePorts = ["firefish/kicia_bay", "alankh/gold_rock_city", "aestrin/fort_aestrin", "emerald/dragon_cliffs"].map(islandById);
+    const chartroomDeclared = { ...voyageFile(racePorts, { game: "eeeeeeeeeeeeeeee", world: { kind: "vanilla" }, start: 500 }), name: "", worldDeclared: true };
+    assert.match(
+      await handle({
+        number: 45,
+        labels: ["enter-race"],
+        title: "Enter race",
+        body: form({ "Course id": "Shipyard Tour", "Run file": pasted(chartroomDeclared), Heatmap: "- [x] Also count this run towards the world's heatmap" }),
+        submitter: "chartroomUser"
+      }),
+      /Accepted:.*#course\/shipyard-tour\)/
+    );
+    await buildData();
+    const vanilla = JSON.parse(await readFile(join(folder, "data", "worlds", "vanilla.json"), "utf8"));
+    assert.equal(vanilla.voyages, 3);
+    assert.equal(vanilla.heatmap.voyages, 3, "declared-world routes count toward the heatmap");
+    const beaverRoute = vanilla.voyageList.find((entry) => entry.submitter === "beaver");
+    assert.equal(beaverRoute.name, "Vanilla Capitals with trade winds");
+    assert.deepEqual(beaverRoute.notes, ["world-declared"]);
+    const recordedRoute = vanilla.voyageList.find((entry) => entry.submitter === "recordedUser");
+    assert.equal(recordedRoute.notes, undefined);
+    const chartroomRoute = vanilla.voyageList.find((entry) => entry.submitter === "chartroomUser");
+    assert.equal(chartroomRoute.name, "", "Enter race default title does not leak onto shared routes");
+    assert.deepEqual(chartroomRoute.notes, ["world-declared"]);
+    const board = JSON.parse(await readFile(join(folder, "data", "boards", "shipyard-tour.json"), "utf8"));
+    assert.deepEqual(board.runs[0].notes, ["world-declared"]);
+    const scrambledWorlds = JSON.parse(await readFile(join(folder, "data", "worlds.json"), "utf8"));
+    const seed77 = scrambledWorlds.find((world) => world.world?.seed === -77);
+    const seed77Data = JSON.parse(await readFile(join(folder, "data", "worlds", `${seed77.key}.json`), "utf8"));
+    assert.equal(seed77Data.voyageList[0].name, "", "Publish a route default title stays unnamed");
+    const seed88 = scrambledWorlds.find((world) => world.world?.seed === -88);
+    const seed88Data = JSON.parse(await readFile(join(folder, "data", "worlds", `${seed88.key}.json`), "utf8"));
+    assert.equal(seed88Data.voyageList[0].name, "Test", "file name wins over GitHub issue title");
   } finally {
     await rm(folder, { recursive: true, force: true });
   }

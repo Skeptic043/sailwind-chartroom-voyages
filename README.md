@@ -10,8 +10,10 @@ You can browse the site without installing anything. To publish routes and race 
 
 ## How it works
 
-- **Publishing a world or route from Chartroom:** Choose `Voyage` > `Publish world/route` in Chartroom, select the part of your track you want to share, then choose `Save and open the form`. Drag the saved file into the form that opens and post it. The route will appear on its world's page and heatmap a minute or two later, with the world published too if it's new, and anyone can download it and sail against it with `Voyage` > `Compare a route`.
-- **Creating a race:** You can create a race by sailing the route in game with Voyage Recorder running, by planning the race and submitting it in [Sailwind Chartroom](https://github.com/Skeptic043/sailwind-chartroom/releases/latest), or by building the route on the [Chartroom Voyages website](https://skeptic043.github.io/sailwind-chartroom-voyages/#create). Races sailed in game can be uploaded through either the app or the website.
+- **Publishing a world or route:** Choose `Voyage` > `Publish world/route` in Chartroom, select the part of your track you want to share, then choose `Save and open the form`. Drag the saved `.voyage.json` file into the form that opens and submit it. For older recordings that do not record their world, you can choose the world under `World (for older recordings)` on the form. The route appears on its world's page and heatmap a minute or two later, publishing the world too if it is new, and anyone can download it and sail against it with `Voyage` > `Compare a route`.
+- **Entering a race:** Choose `Voyage` > `Enter a race` in Chartroom to check your run locally and open the prefilled form, or pick a race on the [Submit page](https://skeptic043.github.io/sailwind-chartroom-voyages/#submit) or choose `Upload a run` on a race's board. Older recordings without race markers or world metadata can still enter races and are marked with a note on the board.
+- **Creating a race:** Plan a route in [Sailwind Chartroom](https://github.com/Skeptic043/sailwind-chartroom/releases/latest) and choose `Voyage` > `Publish route as race`, or build one directly on the [Chartroom Voyages website](https://skeptic043.github.io/sailwind-chartroom-voyages/#create).
+- **Fixing a rejected submission:** If a submission is not accepted, edit your first post on GitHub rather than opening a new issue and the check will run again automatically.
 
 ## Fair play
 

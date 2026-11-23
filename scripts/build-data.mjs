@@ -52,6 +52,7 @@ function voyageSummary(voyage, key) {
     distanceNm: distanceNm(voyage.points),
     hours: Math.round((voyage.points.at(-1).t - voyage.points[0].t) * 100) / 100,
     boats: [...new Set(voyage.points.map((point) => point.boat).filter(Boolean))],
+    ...(voyage.worldDeclared === true && { notes: ["world-declared"] }),
     file: `voyages/${key}/${voyage.id}.json`
   };
 }

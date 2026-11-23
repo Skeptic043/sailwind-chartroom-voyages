@@ -1,5 +1,5 @@
 // Chartroom Voyages: reads the JSON the submission Action builds in data/ and shows worlds, heatmaps, shared
-// routes (voyage files), races and race boards. Pages: #, #world/<key>, #courses, #course/<id>, #create[/<world key>].
+// routes (voyage files), races and race boards. Pages: #, #world/<key>, #courses, #course/<id>, #create[/<world key>], #submit.
 import { ISLAND_CATALOG } from "./vendor/island-catalog.mjs";
 import { drawChart, worldIslands } from "./chart.js";
 import { showRaceBuilder } from "./builder.js";
@@ -8,8 +8,6 @@ const REPOSITORY = "https://github.com/Skeptic043/sailwind-chartroom-voyages";
 const page = document.getElementById("page");
 const cache = new Map();
 let disposeHeatmap = () => {};
-
-document.getElementById("share-link").href = `${REPOSITORY}/issues/new/choose`;
 
 // --- Style and mode -----------------------------------------------------------------------------------
 // Sailwind (paper, wood and the game's title type) or Chartroom (the app's chart look), each light or dark.
@@ -99,9 +97,10 @@ function duration(hours) {
   return days ? `${days}d ${rest}` : rest;
 }
 
-// What an older recording didn't have, shown under the player's name on a race board.
+// What an older recording didn't have, or declared on upload, shown under the name on a board or route list.
 const RUN_NOTES = Object.freeze({
   "world-not-recorded": "World not recorded",
+  "world-declared": "World declared by player",
   "mods-not-recorded": "Mods not recorded",
   "no-real-time": "No real time recorded"
 });
@@ -116,7 +115,11 @@ function realTime(seconds) {
 
 function setCurrentNavigation(kind) {
   for (const item of document.querySelectorAll(".top nav a")) item.removeAttribute("aria-current");
-  const selector = kind === "courses" || kind === "course" || kind === "create" ? 'a[href="#courses"]' : 'a[href="#"]';
+  const selector = kind === "submit"
+    ? 'a[href="#submit"]'
+    : kind === "courses" || kind === "course" || kind === "create"
+      ? 'a[href="#courses"]'
+      : 'a[href="#"]';
   document.querySelector(`.top nav ${selector}`)?.setAttribute("aria-current", "page");
 }
 
@@ -140,6 +143,7 @@ async function route() {
     if (kind === "world" && id) await showWorld(id, token);
     else if (kind === "course" && id) await showCourse(id, token);
     else if (kind === "create") await showCreate(id, token);
+    else if (kind === "submit") await showSubmit(token);
     else if (kind === "courses") await showCourses(token);
     else await showWorlds(token);
   } catch (error) {
@@ -235,6 +239,12 @@ async function showWorld(key, token) {
     world.voyageList.length
       ? voyageTable(world.voyageList)
       : element("p", { className: "muted", textContent: "No routes have been shared here yet." }),
+    element("p", {},
+      Object.assign(
+        link(`${REPOSITORY}/issues/new?template=share-voyage.yml`, "Publish a route", true),
+        { className: "action-link" }
+      )
+    ),
     element("p", {
       className: "muted",
       textContent: "Download a route, then open it in Chartroom with Voyage > Compare a route."
@@ -283,7 +293,10 @@ function voyageTable(voyages) {
     ),
     element("tbody", {},
       ...voyages.map((voyage) => element("tr", {},
-        element("td", { textContent: voyage.name || "Untitled", title: voyage.note }),
+        element("td", { title: voyage.note },
+          voyage.name || "Untitled",
+          ...(voyage.notes?.length ? [element("span", { className: "run-notes", textContent: voyage.notes.map((note) => RUN_NOTES[note] ?? note).join(" · ") })] : [])
+        ),
         element("td", { textContent: voyage.submitter }),
         element("td", { textContent: `${voyage.distanceNm} nm` }),
         element("td", { textContent: duration(voyage.hours) }),
@@ -300,6 +313,71 @@ function voyageTable(voyages) {
   );
 
   return tableFrame(table, "Shared routes");
+}
+
+async function showSubmit(token) {
+  const [boards, worlds] = await Promise.all([
+    data("data/courses.json"),
+    data("data/worlds.json")
+  ]);
+  stillCurrent(token);
+  const worldName = (key) => worlds.find((world) => world.key === key)?.name ?? key;
+
+  const raceSelect = element("select", {},
+    ...boards.map((board) => new Option(`${board.name} — ${worldName(board.world)}`, board.id))
+  );
+  const raceUrl = (courseId) => courseId
+    ? `${REPOSITORY}/issues/new?template=enter-race.yml&course=${encodeURIComponent(courseId)}`
+    : `${REPOSITORY}/issues/new?template=enter-race.yml`;
+  const raceLink = Object.assign(link(raceUrl(raceSelect.value), "Open entry form", true), { className: "action-link" });
+  raceSelect.addEventListener("change", () => {
+    raceLink.href = raceUrl(raceSelect.value);
+  });
+
+  page.replaceChildren(
+    element("h1", { textContent: "Submit" }),
+    element("p", {
+      className: "muted",
+      textContent: "Submissions are posted as GitHub issues, so you'll need a free GitHub account. In Sailwind Chartroom, the Voyage menu can save your file and open the right form for you—or pick what you want to submit below."
+    }),
+    element("ul", { className: "cards submit-cards" },
+      element("li", {},
+        element("h2", { textContent: "Enter a race" }),
+        element("p", { textContent: "Upload a sailed run to a race's board. Older recordings without race markers or world data are accepted with a note." }),
+        boards.length
+          ? element("label", { className: "field" }, element("span", { textContent: "Race" }), raceSelect)
+          : "",
+        element("p", { className: "submit-action" }, raceLink),
+        element("p", { className: "muted submit-tip", textContent: "Tip: Voyage > Enter a race in Chartroom checks your run before opening the form." })
+      ),
+      element("li", {},
+        element("h2", { textContent: "Publish a route" }),
+        element("p", { textContent: "Share a sailed route on its world's page and heatmap. For older recordings without world data, you can choose the world on the form." }),
+        element("p", { className: "submit-action" },
+          Object.assign(link(`${REPOSITORY}/issues/new?template=share-voyage.yml`, "Open route form", true), { className: "action-link" })
+        ),
+        element("p", { className: "muted submit-tip", textContent: "Tip: Save a .voyage.json file with Voyage > Publish world/route or Save route to file in Chartroom." })
+      ),
+      element("li", {},
+        element("h2", { textContent: "Create a race" }),
+        element("p", { textContent: "Build a race on the map with your own checkpoints and rules, or publish a planned route from Chartroom." }),
+        element("p", { className: "submit-action" },
+          Object.assign(link("#create", "Open race builder"), { className: "action-link" })
+        )
+      ),
+      element("li", {},
+        element("h2", { textContent: "Publish a world" }),
+        element("p", { textContent: "Give a Scrambled Seas world its own page using a World Generator share link or Scrambled Seas XML." }),
+        element("p", { className: "submit-action" },
+          Object.assign(link(`${REPOSITORY}/issues/new?template=feature-world.yml`, "Open world form", true), { className: "action-link" })
+        )
+      )
+    ),
+    element("p", {
+      className: "muted",
+      textContent: "Made a mistake on a submission? Edit your first post on GitHub and the check will run again automatically."
+    })
+  );
 }
 
 async function showCreate(worldKey, token) {
@@ -467,7 +545,11 @@ async function showCourse(id, token) {
   page.replaceChildren(
     element("p", {}, back),
     element("h1", { textContent: course.name }),
-    course.author ? element("p", { className: "byline", textContent: `Created by ${course.author}` }) : "",
+    element("p", { className: "byline" },
+      ...(course.author ? [`Created by ${course.author} · `] : []),
+      "Race id: ",
+      element("code", { className: "race-id", textContent: course.id })
+    ),
     element("p", { textContent: course.description }),
     element("h2", { textContent: "Rules" }),
     element("ul", { className: "rules" },
@@ -488,6 +570,10 @@ async function showCourse(id, token) {
       };
     }),
     element("p", {}, enter),
+    element("p", {
+      className: "muted",
+      textContent: "Or use Voyage > Enter a race in Chartroom to check your run before uploading."
+    }),
     element("h2", { textContent: "Board" }),
     board,
     runs.length

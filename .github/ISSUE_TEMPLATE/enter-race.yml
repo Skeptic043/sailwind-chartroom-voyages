@@ -6,12 +6,12 @@ body:
   - type: markdown
     attributes:
       value: |
-        In Sailwind Chartroom, `File` > `Enter a race` checks your run, saves it and opens this form with the course filled in. Drag the `.voyage.json` file into the box below, then submit the form. Entries are public and show your GitHub username.
+        In Sailwind Chartroom, `Voyage` > `Enter a race` checks your run, saves it and opens this form with the race filled in. Drag the `.voyage.json` file into the box below, then submit the form. Entries are public and show your GitHub username.
   - type: input
     id: course
     attributes:
       label: Course id
-      description: The id shown on the course's board, such as shipyard-tour.
+      description: The race id or name shown on the course's board, such as shipyard-tour. Opening this form from the race's board or the Submit page fills it in for you.
     validations:
       required: true
   - type: textarea

@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        The easiest way to fill this in is the [race builder](https://skeptic043.github.io/sailwind-chartroom-voyages/#create) on the site, or `Publish route as race` in Sailwind Chartroom. A race can't be changed once runs have been entered, so publish a new one with a new id instead.
+        The easiest way to fill this in is the [race builder](https://skeptic043.github.io/sailwind-chartroom-voyages/#create) on the site, or `Voyage` > `Publish route as race` in Sailwind Chartroom. A race can't be changed once runs have been entered, so publish a new one with a new id instead.
   - type: textarea
     id: course
     attributes:

@@ -2,7 +2,7 @@ name: Submissions
 
 on:
   issues:
-    types: [opened]
+    types: [opened, edited]
 
 permissions:
   contents: write
@@ -16,10 +16,29 @@ concurrency:
 jobs:
   submit:
     if: >-
-      contains(github.event.issue.labels.*.name, 'share-voyage') ||
-      contains(github.event.issue.labels.*.name, 'enter-race') ||
-      contains(github.event.issue.labels.*.name, 'create-course') ||
-      contains(github.event.issue.labels.*.name, 'feature-world')
+      (
+        contains(github.event.issue.labels.*.name, 'share-voyage') ||
+        contains(github.event.issue.labels.*.name, 'enter-race') ||
+        contains(github.event.issue.labels.*.name, 'create-course') ||
+        contains(github.event.issue.labels.*.name, 'feature-world')
+      ) &&
+      !contains(github.event.issue.labels.*.name, 'accepted') &&
+      github.event.issue.state_reason != 'completed' &&
+      (
+        github.event.action == 'opened' ||
+        (
+          github.event.action == 'edited' &&
+          github.event.changes.body != null &&
+          (
+            contains(github.event.issue.labels.*.name, 'needs-fix') ||
+            github.event.issue.state_reason == 'not_planned'
+          ) &&
+          (
+            github.event.sender.login == github.event.issue.user.login ||
+            github.event.sender.login == github.repository_owner
+          )
+        )
+      )
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +49,7 @@ jobs:
       - name: Check the submission
         env:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_USER: ${{ github.event.issue.user.login }}
           ISSUE_LABELS: ${{ toJSON(github.event.issue.labels.*.name) }}
@@ -52,9 +72,19 @@ jobs:
             git push
             jq -r .message "$RESULT_PATH" > "$RUNNER_TEMP/reply.md"
             gh issue comment "$ISSUE_NUMBER" --body-file "$RUNNER_TEMP/reply.md"
-            gh issue close "$ISSUE_NUMBER" --reason completed
+            gh label create accepted --color 0e8a16 --description "Accepted submission" --force || true
+            gh issue edit "$ISSUE_NUMBER" --add-label accepted
+            gh issue edit "$ISSUE_NUMBER" --remove-label needs-fix || true
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER" -f state=closed -f state_reason=completed >/dev/null
+          elif [ "$(jq -r .alreadyAccepted "$RESULT_PATH")" = "true" ]; then
+            gh label create accepted --color 0e8a16 --description "Accepted submission" --force || true
+            gh issue edit "$ISSUE_NUMBER" --add-label accepted
+            gh issue edit "$ISSUE_NUMBER" --remove-label needs-fix || true
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER" -f state=closed -f state_reason=completed >/dev/null
           else
             jq -r .message "$RESULT_PATH" > "$RUNNER_TEMP/reply.md"
             gh issue comment "$ISSUE_NUMBER" --body-file "$RUNNER_TEMP/reply.md"
-            gh issue close "$ISSUE_NUMBER" --reason "not planned"
+            gh label create needs-fix --color d93f0b --description "Submission needs an edit before it can be accepted" --force || true
+            gh issue edit "$ISSUE_NUMBER" --add-label needs-fix || true
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/$ISSUE_NUMBER" -f state=closed -f state_reason=not_planned >/dev/null
           fi

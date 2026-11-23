@@ -69,7 +69,12 @@ async function fetchAttachment(url) {
 
 // Text from a submission, made safe to show in the bot's Markdown reply: no links, formatting or mentions.
 export function plain(text) {
-  return String(text ?? "").replace(/\s+/g, " ").replace(/[\\`*_[\]()<>#|!~]/g, "\\$&").replace(/@/g, "@\u200b").slice(0, 300);
+  return String(text ?? "")
+    .replace(/\s+/g, " ")
+    .slice(0, 300)
+    .replace(/:\/\//g, ":\u200b//")
+    .replace(/[\\`*_[\]()<>#|!~]/g, "\\$&")
+    .replace(/@/g, "@\u200b");
 }
 
 async function readJsonFiles(folder) {
@@ -88,19 +93,123 @@ async function writeJson(path, value) {
   await writeFile(url, `${JSON.stringify(value)}\n`);
 }
 
-async function shareVoyage(voyage, { id, submitter, submitted }) {
-  const key = worldKey(voyage.world);
-  if (!key) throw new Error("This route doesn't say which world it was sailed in.");
+async function subfolders(folder) {
+  try {
+    return (await readdir(new URL(folder, base()), { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+
+async function hasAcceptedSubmission(id) {
+  for (const root of ["voyages/", "runs/"]) {
+    for (const folder of await subfolders(root)) {
+      try {
+        const names = await readdir(new URL(`${root}${folder}/`, base()));
+        if (names.includes(`${id}.json`)) return true;
+      } catch {}
+    }
+  }
+  return false;
+}
+
+function slug(text) {
+  return String(text ?? "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+// Resolves a course from its id, a board URL, a slugified name (e.g. "Shipyard Tour"), or its exact name.
+export function resolveCourse(courses, input) {
+  const raw = String(input ?? "").trim();
+  let trimmed = raw;
+  const fromUrl = /#course\/([^/?#\s)\]]+)/i.exec(raw)?.[1];
+  if (fromUrl) {
+    try {
+      trimmed = decodeURIComponent(fromUrl).trim();
+    } catch {
+      trimmed = fromUrl.trim();
+    }
+  }
+  if (!trimmed) return { course: null, suggestion: null };
+  const lower = trimmed.toLowerCase();
+  const exact = courses.find((candidate) => candidate.id.toLowerCase() === lower);
+  if (exact) return { course: exact, suggestion: null };
+  const asSlug = slug(trimmed);
+  if (asSlug) {
+    const bySlug = courses.find((candidate) => candidate.id === asSlug);
+    if (bySlug) return { course: bySlug, suggestion: null };
+  }
+  const byName = courses.filter((candidate) => candidate.name.trim().toLowerCase() === lower);
+  if (byName.length === 1) return { course: byName[0], suggestion: null };
+  const byNameSlug = asSlug ? courses.filter((candidate) => slug(candidate.name) === asSlug) : [];
+  if (byNameSlug.length === 1) return { course: byNameSlug[0], suggestion: null };
+  const suggestion = asSlug.length >= 3
+    ? courses.find((candidate) => candidate.id.includes(asSlug) || asSlug.includes(candidate.id) || slug(candidate.name).includes(asSlug)) ?? null
+    : null;
+  return { course: null, suggestion };
+}
+
+const DEFAULT_ROUTE_TITLES = new Set(["publish a route", "share voyage", "enter race"]);
+
+function fallbackRouteName(title) {
+  const cleaned = String(title ?? "").replace(/\s+/g, " ").trim();
+  if (!cleaned || DEFAULT_ROUTE_TITLES.has(cleaned.toLowerCase())) return "";
+  return cleaned.slice(0, 80);
+}
+
+// Optional world declared on the Publish a route form for older recordings that didn't record one.
+function declaredWorldFromFields(fields) {
+  const choice = (fields["World (for older recordings)"] ?? fields["World"] ?? "").trim();
+  const scrambled = (fields["Scrambled Seas world (optional)"] ?? fields["Scrambled Seas world"] ?? "").trim();
+  if (/^vanilla\b/i.test(choice)) {
+    if (scrambled) throw new Error("Choose either Vanilla Sailwind or a Scrambled Seas world, not both.");
+    return { kind: "vanilla" };
+  }
+  if (/^scrambled seas\b/i.test(choice) || scrambled) {
+    if (!scrambled) throw new Error("Paste a World Generator share link or Scrambled Seas XML in the Scrambled Seas world box.");
+    return scrambled.startsWith("<") || scrambled.includes("<ScrambledSeasSaveContainer")
+      ? worldFromXml(scrambled)
+      : worldFromGeneratorLink(scrambled);
+  }
+  return null;
+}
+
+async function shareVoyage(voyage, { id, submitter, submitted, title = "" }, declaredWorld = null) {
+  const fileKey = worldKey(voyage.world);
+  const declaredKey = declaredWorld ? worldKey(declaredWorld) : null;
+  if (fileKey && declaredKey && fileKey !== declaredKey) {
+    throw new Error("The route file already says it was sailed in a different world from the one chosen in the form. Leave World on \"From the route file (default)\" to use the file's recorded world.");
+  }
+  const key = fileKey ?? declaredKey;
+  if (!key) {
+    throw new Error("This route file doesn't say which world it was sailed in (the site reads the attached file, not comments). Choose a world under World (for older recordings) on the form.");
+  }
+  const effectiveWorld = fileKey ? voyage.world : declaredWorld;
+  const worldDeclared = fileKey ? voyage.worldDeclared === true : Boolean(declaredKey);
   const existing = await readJsonFiles(`voyages/${key}/`);
-  if (existing.some((other) => overlaps(other, voyage))) throw new Error("This route, or part of it, has already been published.");
-  await writeJson(`voyages/${key}/${id}.json`, storedVoyage({ ...voyage, world: worldSettings(voyage.world) }, { id, submitter, submitted }));
-  return { key };
+  if (existing.some((other) => overlaps(other, voyage) || sameUnnamedRun(other, voyage))) {
+    throw new Error("This route, or part of it, has already been published.");
+  }
+  const { worldDeclared: _ignored, ...rest } = voyage;
+  const name = rest.name || fallbackRouteName(title);
+  await writeJson(`voyages/${key}/${id}.json`, storedVoyage({
+    ...rest,
+    ...(name && { name }),
+    world: worldSettings(effectiveWorld),
+    ...(worldDeclared && { worldDeclared: true })
+  }, { id, submitter, submitted }));
+  return { key, worldDeclared };
 }
 
 async function enterRace(voyage, courseId, alsoShare, context) {
   const courses = await readJsonFiles("courses/");
-  const course = courses.find((candidate) => candidate.id === courseId.trim());
-  if (!course) throw new Error(`There's no course with the id "${courseId.trim()}". Copy it from the course's board.`);
+  const { course, suggestion } = resolveCourse(courses, courseId);
+  if (!course) {
+    const label = courseId.trim().slice(0, 80);
+    const hint = suggestion
+      ? ` Did you mean "${suggestion.id}" (${suggestion.name})?`
+      : " Check the race id on its board or pick a race from the Submit page.";
+    throw new Error(`There's no course with the id "${label}".${hint}`);
+  }
   // A recording from before Voyage Recorder 0.2.2, or one whose Scrambled Seas save couldn't be read, doesn't name
   // its world; it's taken as the race's, with a note.
   const key = worldKey(voyage.world);
@@ -110,20 +219,34 @@ async function enterRace(voyage, courseId, alsoShare, context) {
   if (runs.some((run) => overlaps(run.voyage, voyage) || sameUnnamedRun(run.voyage, voyage))) throw new Error("This run has already been entered.");
   const checked = checkRun(validateCourse(course), voyage);
   if (!checked.ok) throw new Error(checked.reason);
-  const notes = [...(key ? [] : ["world-not-recorded"]), ...(checked.notes ?? [])];
+  const worldNotes = !key ? ["world-not-recorded"] : voyage.worldDeclared === true ? ["world-declared"] : [];
+  const notes = [...worldNotes, ...(checked.notes ?? [])];
   const result = { ...checked, ...(notes.length && { notes }) };
-  await writeJson(`runs/${course.id}/${context.id}.json`, { id: context.id, submitter: context.submitter, submitted: context.submitted, course: course.id, courseVersion: course.version, ...result, voyage: storedVoyage({ ...voyage, world: key ? worldSettings(voyage.world) : { kind: "unknown" } }, context) });
+  const { worldDeclared: _ignored, ...rest } = voyage;
+  await writeJson(`runs/${course.id}/${context.id}.json`, {
+    id: context.id,
+    submitter: context.submitter,
+    submitted: context.submitted,
+    course: course.id,
+    courseVersion: course.version,
+    ...result,
+    voyage: storedVoyage({
+      ...rest,
+      world: key ? worldSettings(voyage.world) : { kind: "unknown" },
+      ...(key && voyage.worldDeclared === true && { worldDeclared: true })
+    }, context)
+  });
   // A race entry counts toward the heatmap only when the player asked; one already shared isn't added twice.
   // A run without a recorded world has no world's heatmap to join.
-  if (alsoShare && !key) return { ...result, notShared: true };
+  if (alsoShare && !key) return { ...result, courseId: course.id, notShared: true };
   if (alsoShare) {
     try {
-      await shareVoyage(voyage, { ...context, id: `${context.id}-shared` });
+      await shareVoyage(voyage, { ...context, id: `${context.id}-shared`, title: "" });
     } catch {
       // Already shared: the run still stands.
     }
   }
-  return result;
+  return { ...result, courseId: course.id };
 }
 
 // Recordings from before Voyage Recorder 0.1.9 have no game id, so overlaps can't tell them apart; the same
@@ -172,19 +295,25 @@ async function featureWorld(fields, { submitter, submitted }) {
 
 const hours = (value) => `${Math.floor(value)}h ${String(Math.round((value % 1) * 60)).padStart(2, "0")}m`;
 
-export async function handle({ number, labels, body, submitter, site = "" }) {
+export async function handle({ number, labels, title = "", body, submitter, site = "" }) {
   const fields = formFields(body);
-  const context = { submitter, submitted: new Date().toISOString(), id: `${number}` };
+  const context = { submitter, submitted: new Date().toISOString(), id: `${number}`, title };
+  if (labels.includes("accepted") || await hasAcceptedSubmission(context.id)) {
+    throw Object.assign(new Error("This submission has already been accepted."), { alreadyAccepted: true });
+  }
   if (labels.includes("share-voyage")) {
-    const { key } = await shareVoyage(await voyageFromField(fields["Route file"] ?? fields["Voyage file"]), context);
-    return `Thanks! Your route is now on [its world's page](${site}#world/${key}).`;
+    const voyage = await voyageFromField(fields["Route file"] ?? fields["Voyage file"]);
+    const declaredWorld = declaredWorldFromFields(fields);
+    const { key, worldDeclared } = await shareVoyage(voyage, context, declaredWorld);
+    const declaredNote = worldDeclared ? " It's marked as using a player-declared world." : "";
+    return `Thanks! Your route is now on [its world's page](${site}#world/${key}).${declaredNote}`;
   }
   if (labels.includes("enter-race")) {
     const courseId = fields["Course id"] ?? "";
     const alsoShare = /\[x\]/i.test(fields["Heatmap"] ?? "");
     const result = await enterRace(await voyageFromField(fields["Run file"] ?? fields["Voyage file"]), courseId, alsoShare, context);
     const unshared = result.notShared ? " It wasn't added to the heatmap, because the recording doesn't say which world it was sailed in." : "";
-    return `Accepted: ${hours(result.gameHours)} of game time from ${plain(result.startedFrom)}. See [the board](${site}#course/${encodeURIComponent(courseId.trim())}).${unshared}`;
+    return `Accepted: ${hours(result.gameHours)} of game time from ${plain(result.startedFrom)}. See [the board](${site}#course/${encodeURIComponent(result.courseId)}).${unshared}`;
   }
   if (labels.includes("create-course")) {
     const course = await createCourse(fields["Race"] ?? fields["Course"], context);
@@ -205,13 +334,19 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     const message = await handle({
       number: Number(process.env.ISSUE_NUMBER),
       labels: JSON.parse(process.env.ISSUE_LABELS ?? "[]"),
+      title: process.env.ISSUE_TITLE ?? "",
       body: process.env.ISSUE_BODY ?? "",
       submitter: String(process.env.ISSUE_USER ?? "").slice(0, 60),
       site: process.env.SITE_URL ?? ""
     });
     result = { ok: true, message };
   } catch (error) {
-    result = { ok: false, message: `This submission wasn't accepted: ${plain(error.message)}` };
+    result = error?.alreadyAccepted
+      ? { ok: false, alreadyAccepted: true, message: "This submission has already been accepted." }
+      : {
+          ok: false,
+          message: `This submission wasn't accepted: ${plain(error.message)}\n\nYou can fix this by editing your first post above (click \`...\` > \`Edit\`) — it will be checked again automatically without opening a new issue.`
+        };
   }
   await writeFile(resultPath, JSON.stringify(result));
   console.log(result.message);
