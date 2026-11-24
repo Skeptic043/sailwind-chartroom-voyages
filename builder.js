@@ -5,14 +5,15 @@
 // open-water mark. Scrambled Seas islands move between worlds' versions, so there a click places a mark.
 import { drawChart, worldIslands } from "./chart.js";
 import { validateCourse } from "./lib/course.mjs";
-import { findIslands, islandById, matchIslandName } from "./lib/islands.mjs";
+import { findIslands, islandAt, islandById, matchIslandName } from "./lib/islands.mjs";
 import { checkRun } from "./lib/race.mjs";
 import { parseVoyage } from "./lib/voyage.mjs";
 
 const MAX_FORM_URL = 8000;
-const ISLAND_MARK_NM = 2;
+const ISLAND_MARK_NM = 2.5;
 const WATER_MARK_NM = 3;
-const SMALL_MARK_WARNING_NM = 1.5;
+const SMALL_MARK_WARNING_NM = 2;
+const MARK_RADIUS_PRESETS = [2, 3, 5];
 
 const element = (tag, properties = {}, ...children) => {
   const node = Object.assign(document.createElement(tag), properties);
@@ -356,8 +357,23 @@ export function showRaceBuilder(page, { worlds, loadWorld, courses, repository, 
     function refreshRowHints() {
       noteWrap.replaceChildren();
       if (target.island) return;
+      const presets = element("span", { className: "row-hint" },
+        "Radius: ",
+        ...MARK_RADIUS_PRESETS.map((nm) => {
+          const btn = element("button", { type: "button", className: "inline-action", textContent: `${nm} nm`, disabled: Number(target.radiusNm) === nm });
+          btn.addEventListener("click", () => {
+            target.radiusNm = nm;
+            if (radius) radius.value = String(nm);
+            refreshRowHints();
+            chart?.setFlags(flags(), { ordered: order.value === "fixed" });
+            validate();
+          });
+          return btn;
+        })
+      );
+      noteWrap.append(presets);
       if (state.world?.key === "vanilla") {
-        const matched = matchIslandName(target.name, { spoilers: true });
+        const matched = matchIslandName(target.name, { spoilers: true }) ?? islandAt(target.lat, target.lon, { spoilers: true });
         if (matched) {
           const swap = element("button", { type: "button", className: "inline-action", textContent: "Use island" });
           swap.addEventListener("click", () => {
@@ -367,7 +383,7 @@ export function showRaceBuilder(page, { worlds, loadWorld, courses, repository, 
         }
       }
       if (Number(target.radiusNm) < SMALL_MARK_WARNING_NM) {
-        noteWrap.append(element("span", { className: "row-hint warning", textContent: `Small radius (${target.radiusNm} nm): sparse tracks may skip past it.` }));
+        noteWrap.append(element("span", { className: "row-hint warning", textContent: `Tight radius (${target.radiusNm} nm): 2–3 nm is more forgiving for players.` }));
       }
     }
 

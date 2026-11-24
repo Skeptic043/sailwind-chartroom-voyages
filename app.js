@@ -352,12 +352,12 @@ async function showSubmit(token) {
         element("p", { className: "muted submit-tip", textContent: "Tip: Voyage > Enter a race in Chartroom checks your run before opening the form." })
       ),
       element("li", {},
-        element("h2", { textContent: "Publish a route" }),
-        element("p", { textContent: "Share a sailed route on its world's page and heatmap. For older recordings without world data, you can choose the world on the form." }),
+        element("h2", { textContent: "Share a voyage" }),
+        element("p", { textContent: "Share a sailed voyage on its world's page and heatmap. Its Scrambled Seas world is published with it automatically if needed." }),
         element("p", { className: "submit-action" },
-          Object.assign(link(`${REPOSITORY}/issues/new?template=share-voyage.yml`, "Open route form", true), { className: "action-link" })
+          Object.assign(link(`${REPOSITORY}/issues/new?template=share-voyage.yml`, "Open voyage form", true), { className: "action-link" })
         ),
-        element("p", { className: "muted submit-tip", textContent: "Tip: Save a .voyage.json file with Voyage > Publish world/route or Save route to file in Chartroom." })
+        element("p", { className: "muted submit-tip", textContent: "Tip: Use Voyage > Share voyage (or Save voyage to file) in Chartroom to create a .voyage.json file." })
       ),
       element("li", {},
         element("h2", { textContent: "Create a race" }),

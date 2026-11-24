@@ -227,3 +227,38 @@ test("race failure messages distinguish islands from marks and never reached fro
   assert.match(checkRun(islandStartCourse, stayed).reason, /reaches Kicia Bay, but never leaves it/);
   assert.match(checkRun(islandStartCourse, voyage([kicia, onna])).reason, /within 1 nm of the Buoy mark/);
 });
+
+test("sparse tracks count checkpoints when a sailing leg crosses through a mark or island, but ignore long gaps", () => {
+  const courseWithSmallMarks = validateCourse({
+    id: "sparse-marks", name: "Sparse marks", world: "vanilla",
+    start: { name: "Start Buoy", lat: 28.0, lon: 2.0, radiusNm: 0.5 },
+    checkpoints: [{ name: "Mid Buoy", lat: 28.0, lon: 2.1, radiusNm: 0.5 }],
+    finish: { name: "Finish Buoy", lat: 28.0, lon: 2.2, radiusNm: 0.5 }
+  });
+  // Every logged point is ~3.5 nm away from the marks, so no single point lands inside 0.5 nm,
+  // but each consecutive leg passes straight through the mark.
+  const sparse = parseVoyage({
+    format: "sailwind-voyage", version: 1, world: { kind: "vanilla" }, game: "0123456789abcdef", plugins: [],
+    points: [
+      { t: 10, lat: 28.0, lon: 1.975, utc: 1000 },
+      { t: 11, lat: 28.0, lon: 2.025, utc: 1100 },
+      { t: 12, lat: 28.0, lon: 2.075, utc: 1200 },
+      { t: 13, lat: 28.0, lon: 2.125, utc: 1300 },
+      { t: 14, lat: 28.0, lon: 2.175, utc: 1400 },
+      { t: 15, lat: 28.0, lon: 2.225, utc: 1500 }
+    ]
+  });
+  const result = checkRun(courseWithSmallMarks, sparse);
+  assert.equal(result.ok, true, result.reason);
+  assert.ok(result.gameHours > 3.5 && result.gameHours < 4.5, `expected ~4h, got ${result.gameHours}`);
+
+  // A huge recording gap (> 70 nm) jumping across the course must not count as sailing through it.
+  const gapped = parseVoyage({
+    format: "sailwind-voyage", version: 1, world: { kind: "vanilla" }, game: "0123456789abcdef", plugins: [],
+    points: [
+      { t: 10, lat: 28.0, lon: 1.5, utc: 1000 },
+      { t: 20, lat: 28.0, lon: 2.5, utc: 2000 }
+    ]
+  });
+  assert.equal(checkRun(courseWithSmallMarks, gapped).ok, false);
+});
