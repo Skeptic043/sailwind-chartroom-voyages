@@ -12,6 +12,8 @@ const FLAG_HIT_PX = 12;
 const SECRET_RADIUS_DEG = 1.5;
 const REACH_MARGIN_DEG = 0.02;
 const NM_PER_DEGREE = 140;
+// The heatmap switches to a finer grid once its cells are at least this many pixels across.
+const MIN_CELL_PX = 3;
 
 const element = (tag, properties = {}, ...children) => {
   const node = Object.assign(document.createElement(tag), properties);
@@ -60,7 +62,6 @@ export function worldIslands(world) {
 // the flags without moving the chart.
 export function drawChart(frame, options) {
   const { heatmap, unit, spoilers } = options;
-  const cellDegrees = heatmap.cellDegrees;
   const islands = options.islands.filter((entry) => spoilers || !entry.secret);
   const usual = options.islands.filter((entry) => !entry.secret);
   // With spoilers off on vanilla, the chart covers the usual islands, and heat beyond them stays hidden.
@@ -75,20 +76,25 @@ export function drawChart(frame, options) {
   const secrets = !spoilers && options.bounds ? options.islands.filter((entry) => entry.secret) : [];
   const inside = (lat, lon) => (!limit || (lat >= limit.minLat && lat <= limit.maxLat && lon >= limit.minLon && lon <= limit.maxLon))
     && !secrets.some((entry) => Math.hypot(entry.lat - lat, entry.lon - lon) < SECRET_RADIUS_DEG);
-  const cells = Object.entries(heatmap.cells).map(([key, count]) => {
-    const [row, column] = key.split(",").map(Number);
-    return { key, lat: row * cellDegrees, lon: column * cellDegrees, count };
-  }).filter((cell) => inside(cell.lat + cellDegrees / 2, cell.lon + cellDegrees / 2));
-  const countByCell = new Map(cells.map((cell) => [cell.key, cell.count]));
-  const max = Math.max(1, ...cells.map((cell) => cell.count));
+  // The heatmap's grids from coarse to fine, each with the cells shown and their counts.
+  const levels = heatmap.levels.map(({ cellDegrees, cells }) => {
+    const shown = Object.entries(cells).map(([key, count]) => {
+      const [row, column] = key.split(",").map(Number);
+      return { key, lat: row * cellDegrees, lon: column * cellDegrees, count };
+    }).filter((cell) => inside(cell.lat + cellDegrees / 2, cell.lon + cellDegrees / 2));
+    return { cellDegrees, cells: shown, countByCell: new Map(shown.map((cell) => [cell.key, cell.count])) };
+  });
+  const coarse = levels[0] ?? { cellDegrees: 1, cells: [], countByCell: new Map() };
+  // The busiest cell of the whole chart is hot at every zoom, so a colour means the same count throughout.
+  const max = Math.max(1, ...coarse.cells.map((cell) => cell.count));
   const shownFlags = (list) => (list ?? []).filter((flag) => spoilers || !flag.secret);
   let flags = shownFlags(options.flags);
   let ordered = options.ordered === true;
 
   // The whole chart: the world's edges, or everything there is to see.
   const extent = options.bounds ?? limit ?? (() => {
-    const lats = [...islands.flatMap((e) => [e.lat + e.island.bounds.minLat, e.lat + e.island.bounds.maxLat]), ...cells.flatMap((c) => [c.lat, c.lat + cellDegrees]), ...flags.map((f) => f.lat)];
-    const lons = [...islands.flatMap((e) => [e.lon + e.island.bounds.minLon, e.lon + e.island.bounds.maxLon]), ...cells.flatMap((c) => [c.lon, c.lon + cellDegrees]), ...flags.map((f) => f.lon)];
+    const lats = [...islands.flatMap((e) => [e.lat + e.island.bounds.minLat, e.lat + e.island.bounds.maxLat]), ...coarse.cells.flatMap((c) => [c.lat, c.lat + coarse.cellDegrees]), ...flags.map((f) => f.lat)];
+    const lons = [...islands.flatMap((e) => [e.lon + e.island.bounds.minLon, e.lon + e.island.bounds.maxLon]), ...coarse.cells.flatMap((c) => [c.lon, c.lon + coarse.cellDegrees]), ...flags.map((f) => f.lon)];
     if (!lats.length) return { minLat: 0, maxLat: 1, minLon: 0, maxLon: 1 };
     return { minLat: Math.min(...lats) - 0.5, maxLat: Math.max(...lats) + 0.5, minLon: Math.min(...lons) - 0.5, maxLon: Math.max(...lons) + 0.5 };
   })();
@@ -111,7 +117,7 @@ export function drawChart(frame, options) {
   const compass = element("img", { className: "chart-compass", src: "assets/chartroom-icon.png", alt: "" });
   const hint = element("div", { className: "chart-hint", hidden: true, textContent: "Click the chart, then scroll to zoom" });
   const legend = element("div", { className: "chart-legend" }, element("span", { textContent: "Cold" }), element("i"), element("span", { textContent: "Hot" }));
-  frame.replaceChildren(canvas, controls, compass, ...(cells.length ? [legend] : []), hint, tooltip);
+  frame.replaceChildren(canvas, controls, compass, ...(coarse.cells.length ? [legend] : []), hint, tooltip);
 
   const centre = { lat: (extent.minLat + extent.maxLat) / 2, lon: (extent.minLon + extent.maxLon) / 2 };
   let view = { zoom: 1, lat: centre.lat, lon: centre.lon };
@@ -140,7 +146,9 @@ export function drawChart(frame, options) {
     const y = (lat) => pad.top + height / 2 - (lat - view.lat) * scale;
     const lonAt = (px) => view.lon + (px - pad.left - width / 2) / scale;
     const latAt = (py) => view.lat - (py - pad.top - height / 2) / scale;
-    geometry = { cssWidth, cssHeight, pad, width, height, scale, lonAt, latAt, x, y };
+    // The finest grid whose cells are still a few pixels across.
+    const level = levels.findLast((candidate) => candidate.cellDegrees * scale >= MIN_CELL_PX) ?? coarse;
+    geometry = { cssWidth, cssHeight, pad, width, height, scale, lonAt, latAt, x, y, level };
 
     const sea = context.createLinearGradient(0, pad.top, 0, pad.top + height);
     sea.addColorStop(0, colour("--chart-sea"));
@@ -202,17 +210,19 @@ export function drawChart(frame, options) {
       }
     }
 
-    // Heat: a smooth density field. Each cell spreads a Gaussian over a field a third of the chart's size, scaled so
-    // a lane one voyage sailed comes out near 1 and n voyages near n. Colour then runs cold to hot with how many
-    // voyages passed (one is cold, the busiest hot), the edges fade out, and the field is drawn up to size with
-    // smoothing, so lanes blend into each other instead of reading as dots.
-    if (cells.length) {
+    // Heat: a smooth density field from the grid that suits the zoom. Each cell spreads a Gaussian under a cell wide
+    // over a field a third of the chart's size, scaled so a lane one voyage sailed comes out near 1 and n voyages
+    // near n. Colour then runs cold to hot with how many voyages passed (one is cold, the busiest hot), the edges
+    // fade out, and the field is drawn up to size with smoothing, so lanes blend into each other instead of
+    // reading as dots.
+    if (level.cells.length) {
+      const { cells, cellDegrees } = level;
       const factor = 3;
       const fieldWidth = Math.ceil(cssWidth / factor);
       const fieldHeight = Math.ceil(cssHeight / factor);
       const field = new Float32Array(fieldWidth * fieldHeight);
       const spacing = cellDegrees * scale / factor;
-      const sigma = Math.max(compact ? 1.8 : 2.3, spacing * 1.1);
+      const sigma = Math.max(compact ? 1.8 : 2.3, spacing * 0.7);
       const reach = Math.ceil(sigma * 3);
       const size = reach * 2 + 1;
       const kernel = new Float32Array(size * size);
@@ -391,6 +401,7 @@ export function drawChart(frame, options) {
     if (!text) {
       const lon = g.lonAt(px);
       const lat = g.latAt(py);
+      const { countByCell, cellDegrees } = g.level;
       const count = countByCell.get(`${Math.floor(lat / cellDegrees)},${Math.floor(lon / cellDegrees)}`);
       if (count) text = `${count} ${count === 1 ? unit[0] : unit[1]}`;
     }

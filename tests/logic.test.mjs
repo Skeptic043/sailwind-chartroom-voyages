@@ -142,10 +142,26 @@ test("a Scrambled Seas world's islands are placed where the World Generator puts
 test("heatmaps count voyages, not positions", () => {
   const idle = { points: Array.from({ length: 50 }, (_, index) => ({ t: index, lat: 30.05, lon: 1.05 })) };
   const passing = { points: [{ t: 0, lat: 30.05, lon: 1.05 }, { t: 1, lat: 30.5, lon: 1.05 }] };
-  const map = buildHeatmap([idle, passing]);
-  assert.equal(map.cells["150,5"], 2);
-  assert.equal(map.cells["152,5"], 1);
-  assert.equal(map.max, 2);
+  const [coarse] = buildHeatmap([idle, passing]).levels;
+  assert.equal(coarse.cells["150,5"], 2);
+  assert.equal(coarse.cells["152,5"], 1);
+  assert.equal(coarse.max, 2);
+});
+
+test("heatmaps fill the cells between readings and keep nearby lanes apart when zoomed in", () => {
+  const west = { points: [{ t: 0, lat: 30.01, lon: 1.01 }, { t: 1, lat: 30.39, lon: 1.01 }] };
+  const east = { points: [{ t: 0, lat: 30.01, lon: 1.09 }, { t: 1, lat: 30.39, lon: 1.09 }] };
+  const [coarse, fine] = buildHeatmap([west, east]).levels;
+  assert.equal(coarse.cells["151,5"], 2);
+  assert.ok(fine.cellDegrees < coarse.cellDegrees);
+  const row = Math.floor(30.2 / fine.cellDegrees);
+  const column = (lon) => Math.floor(lon / fine.cellDegrees);
+  assert.equal(fine.cells[`${row},${column(1.01)}`], 1);
+  assert.equal(fine.cells[`${row},${column(1.09)}`], 1);
+  assert.equal(fine.cells[`${row},${column(1.05)}`], undefined);
+  // A long recording gap isn't drawn as a straight lane across it.
+  const gap = { points: [{ t: 0, lat: 30.01, lon: 1.01 }, { t: 1, lat: 31.01, lon: 1.01 }] };
+  assert.equal(buildHeatmap([gap]).levels[0].cells["152,5"], undefined);
 });
 
 test("a voyage file is read safely and the same trip shared twice is noticed", () => {

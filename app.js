@@ -606,7 +606,7 @@ async function showCourse(id, token) {
     ...heatmapSection(element("div", { className: "chart-frame" }), (spoilers) => {
       const islands = worldIslands(world);
       return {
-        heatmap: heatmap ?? { cellDegrees: 0.2, cells: {} },
+        heatmap: heatmap ?? { levels: [] },
         islands,
         bounds: scrambledBounds(world),
         flags: courseFlags(course, islands),

@@ -550,7 +550,7 @@ export function showRaceBuilder(page, { worlds, loadWorld, courses, repository, 
   function drawMap() {
     chart?.();
     chart = drawChart(frame, {
-      heatmap: state.world.heatmap ?? { cellDegrees: 0.2, cells: {} },
+      heatmap: state.world.heatmap ?? { levels: [] },
       islands: state.islands,
       bounds: state.world.world?.kind === "scrambled" ? { minLat: state.world.world.latMin, maxLat: state.world.world.latMax, minLon: state.world.world.lonMin, maxLon: state.world.world.lonMax } : null,
       flags: flags(),
