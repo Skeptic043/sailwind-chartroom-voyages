@@ -10,6 +10,8 @@ const MAX_ZOOM = 40;
 const SPOILER_MARGIN_DEG = 0.5;
 const FLAG_HIT_PX = 12;
 const SECRET_RADIUS_DEG = 1.5;
+const REACH_MARGIN_DEG = 0.02;
+const NM_PER_DEGREE = 140;
 
 const element = (tag, properties = {}, ...children) => {
   const node = Object.assign(document.createElement(tag), properties);
@@ -81,6 +83,7 @@ export function drawChart(frame, options) {
   const max = Math.max(1, ...cells.map((cell) => cell.count));
   const shownFlags = (list) => (list ?? []).filter((flag) => spoilers || !flag.secret);
   let flags = shownFlags(options.flags);
+  let ordered = options.ordered === true;
 
   // The whole chart: the world's edges, or everything there is to see.
   const extent = options.bounds ?? limit ?? (() => {
@@ -261,6 +264,44 @@ export function drawChart(frame, options) {
       for (const path of landPaths) context.stroke(path);
     }
 
+    // Optional fixed-order course path connecting stops.
+    if (ordered && flags.length >= 2) {
+      context.save();
+      context.strokeStyle = colour("--chart-coast");
+      context.globalAlpha = 0.5;
+      context.lineWidth = 1.6;
+      context.setLineDash([5, 5]);
+      context.beginPath();
+      flags.forEach((flag, index) => {
+        const px = x(flag.lon);
+        const py = y(flag.lat);
+        if (index) context.lineTo(px, py); else context.moveTo(px, py);
+      });
+      context.stroke();
+      context.restore();
+    }
+
+    // Open-water mark radius rings, so tight vs. wide marks are immediately visible.
+    for (const flag of flags) {
+      if (!Number.isFinite(flag.radiusNm)) continue;
+      const radiusPx = Math.max(3, (flag.radiusNm / NM_PER_DEGREE) * scale);
+      const cx = x(flag.lon);
+      const cy = y(flag.lat);
+      const fill = colour(`--flag-${flag.kind}`);
+      context.save();
+      context.beginPath();
+      context.arc(cx, cy, radiusPx, 0, Math.PI * 2);
+      context.fillStyle = fill;
+      context.globalAlpha = 0.14;
+      context.fill();
+      context.strokeStyle = fill;
+      context.globalAlpha = 0.7;
+      context.lineWidth = 1.3;
+      context.setLineDash([3, 3]);
+      context.stroke();
+      context.restore();
+    }
+
     // Race flags: green start, gold checkpoints, red finish.
     for (const flag of flags) drawFlag(context, x(flag.lon), y(flag.lat), flag.kind, colour(`--flag-${flag.kind}`), colour("--chart-coast"), colour("--chart-sea"));
     context.restore();
@@ -314,12 +355,39 @@ export function drawChart(frame, options) {
     return { px: (event.clientX - bounds.left) * geometry.cssWidth / bounds.width, py: (event.clientY - bounds.top) * geometry.cssHeight / bounds.height };
   }
 
+  function islandReach(entry) {
+    const b = entry.island.bounds;
+    return Math.max(b.maxLat, -b.minLat, b.maxLon, -b.minLon) + REACH_MARGIN_DEG;
+  }
+
+  // The island under (px, py): on its land, or within its reach (matching Chartroom's courseFromRoute
+  // snapping), or within a few pixels when zoomed out. Holding Shift forces open water.
+  function islandUnder(px, py, forceMark = false) {
+    if (forceMark || !geometry) return null;
+    const g = geometry;
+    const lat = g.latAt(py);
+    const lon = g.lonAt(px);
+    const near = 6 / g.scale;
+    const hit = (entry) => {
+      const { island, lat: at, lon: on } = entry;
+      if (island.shapes.some((shape) => shape.kind === 0 && insideRings(shape.rings, lon - on, lat - at))) return true;
+      const reach = Math.max(islandReach(entry), near);
+      return Math.hypot(lat - at, lon - on) <= reach;
+    };
+    return islands.filter(hit).sort((a, b) => Math.hypot(a.lat - lat, a.lon - lon) - Math.hypot(b.lat - lat, b.lon - lon))[0] ?? null;
+  }
+
   function showTooltip(event) {
     if (!geometry) return;
     const { px, py } = local(event);
     const g = geometry;
     const flag = flags.find((candidate) => Math.hypot(g.x(candidate.lon) - px, g.y(candidate.lat) - 6 - py) < FLAG_HIT_PX);
     let text = flag?.label ?? "";
+    if (!text && options.onPick) {
+      const hovered = islandUnder(px, py, event.shiftKey);
+      if (hovered) text = options.bounds ? `${hovered.island.name} (2 nm mark)` : `${hovered.island.name} (island)`;
+      else text = event.shiftKey ? "Open-water mark (Shift)" : "Open-water mark";
+    }
     if (!text) {
       const lon = g.lonAt(px);
       const lat = g.latAt(py);
@@ -333,21 +401,12 @@ export function drawChart(frame, options) {
     tooltip.style.top = `${Math.max(30, py)}px`;
   }
 
-  // The island under a click: on its land, or within a few pixels of one too small to hit, so a click in a bay
-  // or a lagoon is still open water.
   function pick(event) {
     const { px, py } = local(event);
     const g = geometry;
     const lat = g.latAt(py);
     const lon = g.lonAt(px);
-    const near = 6 / g.scale;
-    const hit = (entry) => {
-      const { island, lat: at, lon: on } = entry;
-      const size = Math.max(island.bounds.maxLon - island.bounds.minLon, island.bounds.maxLat - island.bounds.minLat) * g.scale;
-      if (size < 14) return Math.hypot(lat - at, lon - on) <= near + size / g.scale / 2;
-      return island.shapes.some((shape) => shape.kind === 0 && insideRings(shape.rings, lon - on, lat - at));
-    };
-    const island = islands.filter(hit).sort((a, b) => Math.hypot(a.lat - lat, a.lon - lon) - Math.hypot(b.lat - lat, b.lon - lon))[0] ?? null;
+    const island = islandUnder(px, py, event.shiftKey);
     options.onPick({ lat, lon, island });
   }
 
@@ -428,8 +487,9 @@ export function drawChart(frame, options) {
     observer.disconnect();
     window.removeEventListener("voyages-view", schedule);
   };
-  dispose.setFlags = (list) => {
+  dispose.setFlags = (list, { ordered: nextOrdered } = {}) => {
     flags = shownFlags(list);
+    if (typeof nextOrdered === "boolean") ordered = nextOrdered;
     schedule();
   };
   return dispose;

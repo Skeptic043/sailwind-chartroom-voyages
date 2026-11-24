@@ -102,7 +102,8 @@ const RUN_NOTES = Object.freeze({
   "world-not-recorded": "World not recorded",
   "world-declared": "World declared by player",
   "mods-not-recorded": "Mods not recorded",
-  "no-real-time": "No real time recorded"
+  "no-real-time": "No real time recorded",
+  "earlier-course-version": "Earlier course version"
 });
 
 function realTime(seconds) {
@@ -380,13 +381,20 @@ async function showSubmit(token) {
   );
 }
 
-async function showCreate(worldKey, token) {
-  const [worlds, courses] = await Promise.all([data("data/worlds.json"), data("data/courses.json")]);
+async function showCreate(param, token) {
+  const isEdit = param.startsWith("edit/");
+  const editId = isEdit ? param.slice("edit/".length) : "";
+  const [worlds, courses, board] = await Promise.all([
+    data("data/worlds.json"),
+    data("data/courses.json"),
+    editId ? data(`data/boards/${encodeURIComponent(editId)}.json`) : Promise.resolve(null)
+  ]);
   stillCurrent(token);
   disposeHeatmap = showRaceBuilder(page, {
     worlds,
     courses,
-    firstWorld: worldKey || "vanilla",
+    firstWorld: board?.course?.world || (!isEdit && param) || "vanilla",
+    editingCourse: board?.course ?? null,
     loadWorld: (key) => data(`data/worlds/${key}.json`),
     repository: REPOSITORY
   });
@@ -449,10 +457,10 @@ function rulesList(course) {
 }
 
 // The course's flags: where it starts, each checkpoint, and where it finishes. Islands are flagged where the
-// world puts them.
+// world puts them; marks include their radiusNm so the chart draws their circle.
 function courseFlags(course, islands) {
   const place = (target) => {
-    if (!target.island) return { lat: target.lat, lon: target.lon, secret: false };
+    if (!target.island) return { lat: target.lat, lon: target.lon, secret: false, radiusNm: target.radiusNm };
     const entry = islands.find((candidate) => candidate.island.id === target.island);
     return entry ? { lat: entry.lat, lon: entry.lon, secret: entry.secret } : null;
   };
@@ -468,6 +476,33 @@ function courseFlags(course, islands) {
   });
   if (!course.finish.lastCheckpoint) add(course.finish, "finish", `Finish: ${targetName(course.finish)}`);
   return flags;
+}
+
+function formatDate(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function historySection(course) {
+  if (!Array.isArray(course.history) || !course.history.length) return null;
+  const count = course.history.length;
+  return element("details", { className: "course-history" },
+    element("summary", { textContent: `Edit history (${count} previous version${count === 1 ? "" : "s"})` }),
+    ...[...course.history].reverse().map((entry) => {
+      const stopLabel = (target) => target.island ? targetName(target) : `${target.name} (${target.radiusNm} nm mark)`;
+      const stops = [
+        entry.start?.any ? "Start: any checkpoint" : `Start: ${stopLabel(entry.start)}`,
+        `Checkpoints (${entry.order === "fixed" ? "in order" : "any order"}): ${entry.checkpoints.map(stopLabel).join(", ")}`,
+        entry.finish?.lastCheckpoint ? "Finish: last checkpoint" : `Finish: ${stopLabel(entry.finish)}`
+      ];
+      return element("div", { className: "history-entry" },
+        element("h3", { textContent: `Version ${entry.version}${entry.edited ? ` · ${formatDate(entry.edited)}` : ""}` }),
+        entry.name && entry.name !== course.name ? element("p", { className: "muted", textContent: `Name: ${entry.name}` }) : null,
+        element("ul", {}, ...stops.map((line) => element("li", { textContent: line })))
+      );
+    })
+  );
 }
 
 function checkpointList(course) {
@@ -542,15 +577,25 @@ async function showCourse(id, token) {
         textContent: "No runs have been entered yet. Be the first."
       });
 
+  const editLink = link(`#create/edit/${encodeURIComponent(course.id)}`, "Edit race");
+  editLink.className = "edit-race-link";
+  editLink.title = "Only the original author can submit updates";
+
   page.replaceChildren(
     element("p", {}, back),
     element("h1", { textContent: course.name }),
     element("p", { className: "byline" },
       ...(course.author ? [`Created by ${course.author} · `] : []),
       "Race id: ",
-      element("code", { className: "race-id", textContent: course.id })
+      element("code", { className: "race-id", textContent: course.id }),
+      ...((course.version ?? 1) > 1 || course.edited
+        ? [" · ", element("span", { className: "edited-badge", textContent: `Edited (v${course.version ?? 1})`, title: course.edited ? `Updated ${formatDate(course.edited)}` : "" })]
+        : []),
+      " · ",
+      editLink
     ),
     element("p", { textContent: course.description }),
+    historySection(course),
     element("h2", { textContent: "Rules" }),
     element("ul", { className: "rules" },
       ...rulesList(course).map((line) => element("li", { textContent: line }))
@@ -565,6 +610,7 @@ async function showCourse(id, token) {
         islands,
         bounds: scrambledBounds(world),
         flags: courseFlags(course, islands),
+        ordered: course.order === "fixed",
         unit: ["run", "runs"],
         spoilers
       };

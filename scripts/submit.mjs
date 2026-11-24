@@ -257,6 +257,20 @@ function sameUnnamedRun(a, b) {
   return ends(a) === ends(b);
 }
 
+function courseSnapshot(course) {
+  return {
+    version: course.version ?? 1,
+    ...(course.edited && { edited: course.edited }),
+    name: course.name,
+    description: course.description,
+    start: course.start,
+    checkpoints: course.checkpoints,
+    order: course.order,
+    finish: course.finish,
+    rules: course.rules
+  };
+}
+
 async function createCourse(text, { submitter, submitted }) {
   const block = /```(?:json)?\s*([\s\S]*?)```/.exec(text ?? "");
   let value;
@@ -265,7 +279,8 @@ async function createCourse(text, { submitter, submitted }) {
   } catch {
     throw new Error("The race isn't valid JSON. The race builder on the site fills it in for you.");
   }
-  const course = validateCourse({ ...value, author: submitter });
+  const { edited: _edited, history: _history, version: _version, ...clean } = value ?? {};
+  const course = validateCourse({ ...clean, author: submitter });
   // A Scrambled Seas race needs a world the site knows, so its page can show and rebuild it. A race from
   // Chartroom carries its world's settings, and publishes the world with it when the site doesn't have it yet.
   if (course.world !== "vanilla" && !(await readJsonFiles("worlds/")).some((world) => world.key === course.world) && !(await readJsonFiles(`voyages/${course.world}/`)).length) {
@@ -276,9 +291,24 @@ async function createCourse(text, { submitter, submitted }) {
     await writeJson(`worlds/${course.world}.json`, { key: course.world, name: `Scrambled Seas seed ${settings.seed}`, description: "", author: submitter, submitted, world: settings });
   }
   const existing = await readJsonFiles("courses/");
-  if (existing.some((other) => other.id === course.id)) throw new Error(`A race with the id "${course.id}" already exists. Choose another id, such as ${course.id}-2.`);
+  const prior = existing.find((other) => other.id === course.id);
+  if (prior) {
+    if (!prior.author || prior.author.toLowerCase() !== submitter.toLowerCase()) {
+      throw new Error(`A race with the id "${course.id}" already exists. Choose another id, such as ${course.id}-2.`);
+    }
+    const history = [...(Array.isArray(prior.history) ? prior.history : []), courseSnapshot(prior)].slice(-50);
+    const updatedCourse = validateCourse({
+      ...course,
+      author: prior.author,
+      version: (prior.version ?? 1) + 1,
+      edited: submitted,
+      history
+    });
+    await writeJson(`courses/${course.id}.json`, updatedCourse);
+    return { course: updatedCourse, updated: true };
+  }
   await writeJson(`courses/${course.id}.json`, course);
-  return course;
+  return { course, updated: false };
 }
 
 async function featureWorld(fields, { submitter, submitted }) {
@@ -316,8 +346,10 @@ export async function handle({ number, labels, title = "", body, submitter, site
     return `Accepted: ${hours(result.gameHours)} of game time from ${plain(result.startedFrom)}. See [the board](${site}#course/${encodeURIComponent(result.courseId)}).${unshared}`;
   }
   if (labels.includes("create-course")) {
-    const course = await createCourse(fields["Race"] ?? fields["Course"], context);
-    return `Your race is live: [${plain(course.name)}](${site}#course/${course.id}).`;
+    const { course, updated } = await createCourse(fields["Race"] ?? fields["Course"], context);
+    return updated
+      ? `Your race has been updated (v${course.version}): [${plain(course.name)}](${site}#course/${course.id}).`
+      : `Your race is live: [${plain(course.name)}](${site}#course/${course.id}).`;
   }
   if (labels.includes("feature-world")) {
     const { key, name } = await featureWorld(fields, context);

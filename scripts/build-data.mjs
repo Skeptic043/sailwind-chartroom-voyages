@@ -96,20 +96,26 @@ export async function buildData() {
     // Runs without the board's time (a real-time board's runs from older recordings) follow the ranked ones.
     const ranked = runs.filter((run) => Number.isFinite(run[sortBy])).sort((a, b) => a[sortBy] - b[sortBy]);
     const unranked = runs.filter((run) => !Number.isFinite(run[sortBy]) && Number.isFinite(run.gameHours)).sort((a, b) => a.gameHours - b.gameHours);
-    const entries = [...ranked, ...unranked].map((run, index) => ({
-      rank: index < ranked.length ? index + 1 : null,
-      id: run.id,
-      submitter: run.submitter,
-      submitted: run.submitted,
-      gameHours: run.gameHours,
-      irlSeconds: run.irlSeconds,
-      boat: run.boat,
-      windKnots: run.windKnots,
-      startedFrom: run.startedFrom,
-      ...(Array.isArray(run.notes) && run.notes.length && { notes: run.notes }),
-      splits: run.splits.map((split) => ({ name: split.name, hours: Math.round((split.t - run.start) * 100) / 100 })),
-      file: `runs/${course.id}/${run.id}.json`
-    }));
+    const entries = [...ranked, ...unranked].map((run, index) => {
+      const notes = [...(Array.isArray(run.notes) ? run.notes : [])];
+      if ((course.version ?? 1) > 1 && (run.courseVersion ?? 1) < course.version && !notes.includes("earlier-course-version")) {
+        notes.push("earlier-course-version");
+      }
+      return {
+        rank: index < ranked.length ? index + 1 : null,
+        id: run.id,
+        submitter: run.submitter,
+        submitted: run.submitted,
+        gameHours: run.gameHours,
+        irlSeconds: run.irlSeconds,
+        boat: run.boat,
+        windKnots: run.windKnots,
+        startedFrom: run.startedFrom,
+        ...(notes.length && { notes }),
+        splits: run.splits.map((split) => ({ name: split.name, hours: Math.round((split.t - run.start) * 100) / 100 })),
+        file: `runs/${course.id}/${run.id}.json`
+      };
+    });
     boards.push({ id: course.id, name: course.name, world: course.world, runs: entries.length, spoiler: course.spoiler === true });
     // Where the runs went, drawn under the course's flags.
     await write(`data/boards/${course.id}.json`, { course, runs: entries, heatmap: buildHeatmap(runs.map((run) => run.voyage).filter((voyage) => voyage?.points?.length)) });

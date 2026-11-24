@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { islandById } from "../lib/islands.mjs";
+import { findIslands, islandAt, islandById, matchIslandName } from "../lib/islands.mjs";
 import { checkRun, checkMods } from "../lib/race.mjs";
 import { validateCourse } from "../lib/course.mjs";
 import { buildHeatmap } from "../lib/heatmap.mjs";
@@ -181,4 +181,49 @@ test("review fixes: marks ignore port names, real-time boards time by real time,
   assert.match(checkRun(oneBoat, anonymous).reason, /doesn't say which boat/);
   assert.equal(worldKey({ kind: "scrambled", seed: 7 }), null, "a seed alone doesn't identify a map");
   assert.throws(() => worldFromGeneratorLink("https://example.com/#v=1&seed=1"), /isn't a World Generator share link/);
+});
+
+test("island search recognizes names, punctuation-free forms, initials, and reach snapping", () => {
+  assert.equal(matchIslandName("FFT")?.id, "firefish/fire_fish_town");
+  assert.equal(matchIslandName("fire fish town")?.id, "firefish/fire_fish_town");
+  assert.equal(matchIslandName("firefishtown")?.id, "firefish/fire_fish_town");
+  assert.equal(matchIslandName("senna")?.id, "firefish/senna");
+  assert.equal(matchIslandName("onna")?.id, "firefish/onna");
+  assert.equal(matchIslandName("GRC")?.id, "alankh/gold_rock_city");
+  assert.equal(findIslands("FFT")[0]?.id, "firefish/fire_fish_town");
+  assert.equal(findIslands("kicia")[0]?.id, "firefish/kicia_bay");
+  const kicia = at("firefish/kicia_bay");
+  assert.equal(islandAt(kicia.lat + 0.01, kicia.lon + 0.01)?.id, "firefish/kicia_bay");
+  assert.equal(islandAt(0, 0), null);
+});
+
+test("race failure messages distinguish islands from marks and never reached from never left", () => {
+  const kicia = at("firefish/kicia_bay");
+  const onna = at("firefish/onna");
+  const grc = at("alankh/gold_rock_city");
+  const markStartCourse = validateCourse({
+    id: "mark-start", name: "Mark start", world: "vanilla",
+    start: { name: "Kicia Bay", lat: kicia.lat, lon: kicia.lon, radiusNm: 0.5 },
+    checkpoints: [{ island: onna.id }],
+    finish: { lastCheckpoint: true }
+  });
+  const farRun = voyage([grc, onna]);
+  assert.match(checkRun(markStartCourse, farRun).reason, /never comes within 0\.5 nm of the Kicia Bay mark/);
+  const stayed = parseVoyage({
+    format: "sailwind-voyage", version: 1, world: { kind: "vanilla" }, game: "0123456789abcdef", plugins: [],
+    points: [
+      { t: 1, lat: kicia.lat, lon: kicia.lon, utc: 100 },
+      { t: 2, lat: kicia.lat, lon: kicia.lon, utc: 200 }
+    ]
+  });
+  assert.match(checkRun(markStartCourse, stayed).reason, /enters the Kicia Bay mark \(0\.5 nm\), but never leaves it/);
+  const islandStartCourse = validateCourse({
+    id: "island-start", name: "Island start", world: "vanilla",
+    start: { island: kicia.id },
+    checkpoints: [{ name: "Buoy", lat: 10, lon: 10, radiusNm: 1 }],
+    finish: { lastCheckpoint: true }
+  });
+  assert.match(checkRun(islandStartCourse, farRun).reason, /never reaches Kicia Bay/);
+  assert.match(checkRun(islandStartCourse, stayed).reason, /reaches Kicia Bay, but never leaves it/);
+  assert.match(checkRun(islandStartCourse, voyage([kicia, onna])).reason, /within 1 nm of the Buoy mark/);
 });

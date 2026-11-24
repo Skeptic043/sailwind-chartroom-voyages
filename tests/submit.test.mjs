@@ -97,7 +97,7 @@ test("players create courses and feature worlds", async () => {
     assert.match(await handle({ number: 20, labels: ["create-course"], body: form({ Race: pasted(course) }), submitter: "maker" }), /race is live/);
     const saved = JSON.parse(await readFile(join(folder, "courses", "neverdin-dash.json"), "utf8"));
     assert.equal(saved.author, "maker");
-    await assert.rejects(handle({ number: 21, labels: ["create-course"], body: form({ Course: pasted(course) }), submitter: "maker" }), /already exists/);
+    await assert.rejects(handle({ number: 21, labels: ["create-course"], body: form({ Course: pasted(course) }), submitter: "other-maker" }), /already exists/);
     const link = "https://skeptic043.github.io/scrambled-seas-world-generator/#v=1&lo1=-20&lo2=40&la1=20&la2=50&ws=1.4&cx=10&cy=35&as=1.5&is=1.3&isp=1.3&seed=-77";
     assert.match(await handle({ number: 22, labels: ["feature-world"], body: form({ Name: "Wide sea", Description: "Lots of room", World: link }), submitter: "maker" }), /now published/);
     await buildData();
@@ -333,6 +333,65 @@ test("older routes can declare their world on the form or in the file and count 
     const seed88 = scrambledWorlds.find((world) => world.world?.seed === -88);
     const seed88Data = JSON.parse(await readFile(join(folder, "data", "worlds", `${seed88.key}.json`), "utf8"));
     assert.equal(seed88Data.voyageList[0].name, "Test", "file name wins over GitHub issue title");
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
+test("original course author can update their race in place with edit history", async () => {
+  const folder = await scratch();
+  try {
+    const kicia = islandById("firefish/kicia_bay");
+    const onna = islandById("firefish/onna");
+    const initial = {
+      id: "fire-fish-loop",
+      name: "Fire Fish Loop",
+      world: "vanilla",
+      start: { island: kicia.id },
+      checkpoints: [{ island: onna.id }],
+      order: "fixed",
+      finish: { lastCheckpoint: true }
+    };
+    const created = await handle({
+      number: 50,
+      labels: ["create-course"],
+      body: form({ Race: JSON.stringify(initial) }),
+      submitter: "CaptainBeaver"
+    });
+    assert.match(created, /Your race is live/);
+    const run = voyageFile([kicia, onna], { game: "dddddddddddddddd" });
+    await handle({
+      number: 51,
+      labels: ["enter-race"],
+      body: form({ "Course id": "fire-fish-loop", "Run file": pasted(run) }),
+      submitter: "sailor"
+    });
+    await assert.rejects(
+      handle({
+        number: 52,
+        labels: ["create-course"],
+        body: form({ Race: JSON.stringify({ ...initial, name: "Hijacked" }) }),
+        submitter: "someone-else"
+      }),
+      /already exists/
+    );
+    const updated = await handle({
+      number: 53,
+      labels: ["create-course"],
+      body: form({ Race: JSON.stringify({ ...initial, finish: { island: kicia.id } }) }),
+      submitter: "captainbeaver"
+    });
+    assert.match(updated, /updated \(v2\)/);
+    await buildData();
+    const board = JSON.parse(await readFile(join(folder, "data", "boards", "fire-fish-loop.json"), "utf8"));
+    assert.equal(board.course.version, 2);
+    assert.ok(board.course.edited);
+    assert.equal(board.course.history.length, 1);
+    assert.equal(board.course.history[0].version, 1);
+    assert.deepEqual(board.course.history[0].finish, { lastCheckpoint: true });
+    assert.deepEqual(board.course.finish, { island: kicia.id });
+    assert.equal(board.runs.length, 1);
+    assert.ok(board.runs[0].notes.includes("earlier-course-version"));
   } finally {
     await rm(folder, { recursive: true, force: true });
   }
