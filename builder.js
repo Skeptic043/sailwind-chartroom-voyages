@@ -383,7 +383,7 @@ export function showRaceBuilder(page, { worlds, loadWorld, courses, repository, 
         }
       }
       if (Number(target.radiusNm) < SMALL_MARK_WARNING_NM) {
-        noteWrap.append(element("span", { className: "row-hint warning", textContent: `Tight radius (${target.radiusNm} nm): 2–3 nm is more forgiving for players.` }));
+        noteWrap.append(element("span", { className: "row-hint warning", textContent: `Tight radius (${target.radiusNm} nm): 2–3 nm is more forgiving, and racers should set Voyage Recorder's Interval to 60 seconds or lower so a reading lands inside the mark.` }));
       }
     }
 

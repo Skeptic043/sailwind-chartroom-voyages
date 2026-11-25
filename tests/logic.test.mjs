@@ -137,6 +137,10 @@ test("a Scrambled Seas world's islands are placed where the World Generator puts
   for (const island of islands) assert.ok(island.lat > world.latMin && island.lat < world.latMax && island.lon > world.lonMin && island.lon < world.lonMax);
   assert.notDeepEqual(byId.get("alankh/gold_rock_city"), { id: "alankh/gold_rock_city", lat: islandById("alankh/gold_rock_city").lat, lon: islandById("alankh/gold_rock_city").lon });
   assert.equal(scrambledIslands({ kind: "vanilla" }), null);
+  // A lagoon islet keeps its place beside the numbered island it is part of: the East Islet with Fire Fish Town.
+  const spacing = (a, b) => [Math.round((a.lat - b.lat) * 1e4), Math.round((a.lon - b.lon) * 1e4)];
+  const islet = "firefish/fire_fish_islands/east_islet", town = "firefish/fire_fish_town";
+  assert.deepEqual(spacing(byId.get(islet), byId.get(town)), spacing(islandById(islet), islandById(town)));
 });
 
 test("heatmaps count voyages, not positions", () => {
